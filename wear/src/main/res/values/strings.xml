@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">omi4wOS</string>
+    <string name="tile_label">omi4wOS</string>
+    <string name="notification_channel_name">Audio Capture</string>
+    <string name="notification_channel_description">Ongoing notification for audio recording</string>
+    <string name="notification_title">omi4wOS Listening</string>
+    <string name="notification_text_idle">Monitoring for speech…</string>
+    <string name="notification_text_speech">Speech detected</string>
+    <string name="permission_rationale">Microphone access is required to detect and capture speech for Omi.</string>
+    <string name="btn_start">Start</string>
+    <string name="btn_stop">Stop</string>
+    <string name="status_idle">Idle</string>
+    <string name="status_listening">Listening</string>
+    <string name="status_speech">Speech Detected</string>
+    <string name="status_error">Error</string>
+    <string name="phone_not_connected">Phone not connected</string>
+    <string name="phone_connected">Phone connected</string>
+</resources>

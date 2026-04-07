@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">omi4wOS Companion</string>
+    <string name="notification_channel_name">Audio Receiver</string>
+    <string name="notification_channel_description">Receives audio from watch for transcription</string>
+    <string name="notification_title">omi4wOS Companion</string>
+    <string name="notification_text_idle">Waiting for watch audio…</string>
+    <string name="notification_text_transcribing">Transcribing speech…</string>
+    <string name="settings_title">Omi Settings</string>
+    <string name="settings_api_key">API Key</string>
+    <string name="settings_app_id">App ID</string>
+    <string name="settings_user_id">User ID</string>
+    <string name="settings_save">Save</string>
+    <string name="home_title">omi4wOS</string>
+    <string name="watch_connected">Watch connected</string>
+    <string name="watch_disconnected">Watch not connected</string>
+    <string name="no_transcripts">No transcripts yet</string>
+    <string name="tab_home">Home</string>
+    <string name="tab_settings">Settings</string>
+</resources>
