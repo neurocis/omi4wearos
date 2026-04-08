@@ -78,7 +78,7 @@ To interface perfectly with Omi Cloud natively, this system securely routes thro
 
 1. **Watch** continuously monitors audio using an ultra-lightweight YAMNet local ML model for voice activity.
 2. When speech is detected, the watch aggressively extracts a highly optimized Opus audio chunk out of a completely sequential, duplicate-free linearly tracked buffer and streams it over Bluetooth.
-3. The **Phone** listens synchronously, intelligently appending native Opus payloads together matching Limitless frame formatting.
+3. The **Phone** listens synchronously, intelligently appending native Opus payloads together matching Omi frame formatting.
 4. Once the sentence drops below the noise floor, the Phone securely uploads `recording_fs320_[timestamp].bin` directly into the Omi Cloud over dual Firebase Authentication.
 
 ## Key Upgrades from Original Base
