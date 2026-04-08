@@ -58,11 +58,12 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 val nodes = nodeClient.connectedNodes.await()
                 Log.i(TAG, "Connected nodes from phone: ${nodes.map { it.displayName }}")
-                if (nodes.isNotEmpty()) {
-                    AudioReceiverService.watchConnected.value.let { }
-                    // Node visible — update state directly
-                    _uiState.value = _uiState.value.copy(watchConnected = true)
-                }
+                
+                // Completely sync the native NodeClient truth into our local states
+                val isActuallyConnected = nodes.isNotEmpty()
+                AudioReceiverService.setWatchConnected(isActuallyConnected)
+                _uiState.value = _uiState.value.copy(watchConnected = isActuallyConnected)
+                
             } catch (e: Exception) {
                 Log.e(TAG, "Node check failed", e)
             }
