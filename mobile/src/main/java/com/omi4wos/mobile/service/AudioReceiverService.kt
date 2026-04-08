@@ -35,6 +35,10 @@ class AudioReceiverService : WearableListenerService() {
         // Observable state
         private val _watchConnected = MutableStateFlow(false)
         val watchConnected: StateFlow<Boolean> = _watchConnected
+        
+        fun setWatchConnected(connected: Boolean) {
+            _watchConnected.value = connected
+        }
 
         private val _audioChunkFlow = MutableSharedFlow<AudioChunk>(extraBufferCapacity = 64)
         val audioChunkFlow: SharedFlow<AudioChunk> = _audioChunkFlow
