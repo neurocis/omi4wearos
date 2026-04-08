@@ -90,5 +90,6 @@ To interface perfectly with Omi Cloud natively, this system securely routes thro
 - **BLE Batch Transfer:** Changed the transmission behavior from streaming every second to batch-transmitting the completed payload at the end of a phrase to reduce radio activity.
 - **Store-and-Forward Caching Engine:** Includes a local disk-caching mechanism (`ChunkRepository`). If Bluetooth connection drops, the watch saves up to 500MB of Opus audio to disk. A background worker syncs the missed files chronologically upon reconnection.
 - **Duplicate Audio Prevention**: Companion dual-listeners track immutable Chunk Index IDs to drop stuttering or duplicated chunks in bad connections.
-- **Algorithmic Pre-roll Windows**: Buffers 2.5s of audio prior to speech detection to prevent sentence cutoff.
+- **Dynamic Conversational Hysteresis**: Natively switches WebRTC constraints between a strict 3.8-second environmental noise wall (Idle Mode) to an aggressive 0.9-second word-catcher (Active Conversation logic), providing flawless false-positive prevention without sacrificing short dialog responses.
+- **Amplified Pre-roll Windows**: Buffers 4.0s of audio natively backwards through RAM prior to speech detection to effortlessly prevent sentence cutoff when overcoming the strict Idle Mode boundary walls.
 - **Background Upload Retry**: Failed `.bin` uploads are cached natively in a local Room database and re-attempted on next internet connection.
