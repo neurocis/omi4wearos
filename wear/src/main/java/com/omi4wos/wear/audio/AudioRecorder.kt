@@ -63,8 +63,9 @@ class AudioRecorder {
             isRecording = true
             audioRecord?.startRecording()
 
-            // Read buffer size in samples (~50ms chunks for responsive classification)
-            val readSizeSamples = sampleRate / 20 // 800 samples = 50ms
+            // Maximize CPU sleep cycle by drastically expanding hardware read buffer
+            // Matches exactly to the 0.975s YAMNet constraint (15600 samples)
+            val readSizeSamples = Constants.YAMNET_INPUT_SAMPLES
 
             recordingThread = Thread({
                 android.os.Process.setThreadPriority(

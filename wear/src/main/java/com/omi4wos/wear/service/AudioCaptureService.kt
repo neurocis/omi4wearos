@@ -73,6 +73,7 @@ class AudioCaptureService : Service() {
     private var currentSegmentId: String = ""
     private var chunkIndex = 0
     private var isInSpeechSegment = false
+    private val pendingChunks = mutableListOf<AudioChunk>()
 
     // Thresholds for hysteresis
     private val speechOnsetFrames = 2 // Need 2 consecutive speech frames to trigger
@@ -264,6 +265,18 @@ class AudioCaptureService : Service() {
         }
     }
 
+    private fun flushPendingChunks() {
+        if (pendingChunks.isEmpty()) return
+        val chunksToSend = pendingChunks.toList()
+        pendingChunks.clear()
+
+        serviceScope.launch {
+            for (chunk in chunksToSend) {
+                dataLayerSender.sendAudioChunk(chunk)
+            }
+        }
+    }
+
     private fun extractAndSendPreRoll() {
         val unreadBuffer = circularBuffer.consumeUnread()
         if (unreadBuffer.isEmpty()) return
@@ -279,9 +292,7 @@ class AudioCaptureService : Service() {
                 segmentId = currentSegmentId,
                 isFinal = false
             )
-            serviceScope.launch {
-                dataLayerSender.sendAudioChunk(chunk)
-            }
+            pendingChunks.add(chunk)
         }
     }
 
@@ -300,8 +311,11 @@ class AudioCaptureService : Service() {
                 segmentId = currentSegmentId,
                 isFinal = isFinal
             )
-            serviceScope.launch {
-                dataLayerSender.sendAudioChunk(chunk)
+            pendingChunks.add(chunk)
+            
+            // Blast the absolute payload completely across BLE natively on sentence completion
+            if (isFinal) {
+                flushPendingChunks()
             }
         }
     }
