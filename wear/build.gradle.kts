@@ -39,10 +39,7 @@ android {
         compose = true
     }
 
-    // Ensure yamnet.tflite is not compressed in the APK
-    androidResources {
-        noCompress += listOf("tflite")
-    }
+
 }
 
 dependencies {
@@ -79,9 +76,8 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-guava:1.8.1")
 
-    // TensorFlow Lite for YAMNet
-    implementation("org.tensorflow:tensorflow-lite:2.16.1")
-    implementation("org.tensorflow:tensorflow-lite-support:0.4.4")
+    // Native Gaussian WebRTC VAD
+    implementation("com.github.gkonovalov.android-vad:webrtc:2.0.7")
 
     // Wear Tiles (for tile service)
     implementation("androidx.wear.tiles:tiles:1.4.0")

@@ -166,9 +166,8 @@ class AudioCaptureService : Service() {
      * classifies with YAMNet, and handles speech segment extraction.
      */
     private suspend fun classificationLoop() {
-        val windowSamples = Constants.YAMNET_INPUT_SAMPLES // 15600 samples = 0.975s
+        val windowSamples = Constants.WEBRTC_INPUT_SAMPLES
         val windowBuffer = ShortArray(windowSamples)
-        val floatBuffer = FloatArray(windowSamples)
 
         while (serviceScope.isActive) {
             // Wait until we have enough samples
@@ -180,11 +179,6 @@ class AudioCaptureService : Service() {
             // Read the latest window from circular buffer
             circularBuffer.readLatest(windowBuffer, windowSamples)
 
-            // Convert to float [-1.0, 1.0] for YAMNet
-            for (i in windowBuffer.indices) {
-                floatBuffer[i] = windowBuffer[i] / 32768.0f
-            }
-
             // Check loudness
             val rmsDb = calculateRmsDb(windowBuffer)
             if (rmsDb < Constants.LOUDNESS_THRESHOLD_DB) {
@@ -193,8 +187,8 @@ class AudioCaptureService : Service() {
                 continue
             }
 
-            // Classify with YAMNet
-            val result = speechClassifier.classify(floatBuffer)
+            // Classify with WebRTC VAD
+            val result = speechClassifier.classify(windowBuffer)
 
             if (result.isSpeech) {
                 handleSpeechFrame(result.confidence)

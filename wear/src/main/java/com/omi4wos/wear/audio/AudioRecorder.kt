@@ -64,8 +64,8 @@ class AudioRecorder {
             audioRecord?.startRecording()
 
             // Maximize CPU sleep cycle by drastically expanding hardware read buffer
-            // Matches exactly to the 0.975s YAMNet constraint (15600 samples)
-            val readSizeSamples = Constants.YAMNET_INPUT_SAMPLES
+            // Matches exactly to the 0.960s WebRTC constraint (15360 samples)
+            val readSizeSamples = Constants.WEBRTC_INPUT_SAMPLES
 
             recordingThread = Thread({
                 android.os.Process.setThreadPriority(

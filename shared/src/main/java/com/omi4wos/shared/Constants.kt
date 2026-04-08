@@ -10,11 +10,8 @@ object Constants {
     const val BITS_PER_SAMPLE = 16
     const val BYTES_PER_SAMPLE = BITS_PER_SAMPLE / 8
 
-    // YAMNet parameters
-    const val YAMNET_INPUT_SAMPLES = 15600 // 0.975s at 16kHz
-    const val YAMNET_NUM_CLASSES = 521
-    const val YAMNET_SPEECH_CLASS_INDEX = 0 // "Speech" in AudioSet ontology
-    const val SPEECH_CONFIDENCE_THRESHOLD = 0.5f
+    // WebRTC VAD parameters
+    const val WEBRTC_INPUT_SAMPLES = 15360 // 0.960s at 16kHz (exactly 48 frames of 20ms)
     const val LOUDNESS_THRESHOLD_DB = 45.0
 
     // Circular buffer: store last 30 seconds of audio
@@ -28,7 +25,7 @@ object Constants {
     const val MAX_SPEECH_SEGMENT_SECONDS = 60 // Max single segment
 
     // Classification duty cycle
-    const val CLASSIFICATION_INTERVAL_MS = 975L // ~1 YAMNet window
+    const val CLASSIFICATION_INTERVAL_MS = 960L // ~1 WebRTC polling window
 
     // Opus encoder parameters
     const val OPUS_BITRATE = 24000 // 24 kbps - good for speech
