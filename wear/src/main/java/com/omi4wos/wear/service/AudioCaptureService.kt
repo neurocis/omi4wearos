@@ -77,7 +77,7 @@ class AudioCaptureService : Service() {
 
 
     // Thresholds for hysteresis
-    private val speechOnsetFrames = 2 // Need 2 consecutive speech frames to trigger
+    private val speechOnsetFrames = 4 // Need 4 consecutive frames (~3.84s) of speech to trigger
     private val speechOffsetFrames = 5 // Need 5 consecutive silence frames to end
 
     override fun onBind(intent: Intent?): IBinder? = null
