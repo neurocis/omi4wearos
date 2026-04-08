@@ -4,6 +4,10 @@ A multi-module Android/Kotlin project that transforms your WearOS watch into an 
 
 Adapted the original version which performed Android transcription, **this cipioh-edition rewrite fundamentally redesigns the architectural flow to precisely emulate the Omi device.** The watch now generates native 16kbps Opus chunks, seamlessly streams them to the phone companion, and directly constructs Omi-compatible `.bin` archives that are pushed natively into Omi's `/v2/sync-local-files` cloud API for state-of-the-art server-side transcription and intelligence.
 
+![Screenshot_20260408_000347_omi4wOS Companion](https://github.com/user-attachments/assets/e8de0170-4512-4a55-bc84-e5f4a6d9b833)
+![Screenshot_20260408_000406_omi4wOS Companion](https://github.com/user-attachments/assets/096cb612-54f4-4a26-b7c9-17a58bdb2d81)
+
+
 ## Architecture
 
 ```
