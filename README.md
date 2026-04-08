@@ -14,7 +14,7 @@ Adapted the original version which performed Android transcription, **this cipio
 If you do not want to compile the code in Android Studio, you can natively download the fully packaged APK files directly from the `/releases` folder in this repository! 
 
 There are precisely two files. Both are required for the framework to function smoothly:
-1. `Omi4wOS_Wear_v1.0.apk` -> Install directly onto your **Galaxy Watch** (Wear OS) using ADB.
+1. `Omi4wOS_Wear_v1.0.apk` -> Install directly onto your **Watch** (Wear OS) using ADB.
 2. `Omi4wOS_Mobile_v1.0.apk` -> Install directly onto your **Android Phone** so you can securely plug in your private API tokens natively.
 
 ## Architecture
