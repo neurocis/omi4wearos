@@ -77,8 +77,10 @@ class AudioCaptureService : Service() {
 
 
     // Thresholds for hysteresis
-    private val speechOnsetFrames = 4 // Need 4 consecutive frames (~3.84s) of speech to trigger
     private val speechOffsetFrames = 5 // Need 5 consecutive silence frames to end
+
+    // Dynamic Conversation Tracking
+    private var lastValidSpeechEndTimeMs: Long = 0L
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -213,7 +215,11 @@ class AudioCaptureService : Service() {
         consecutiveSpeechFrames++
         consecutiveSilenceFrames = 0
 
-        if (!isInSpeechSegment && consecutiveSpeechFrames >= speechOnsetFrames) {
+        val timeSinceLastSpeech = System.currentTimeMillis() - lastValidSpeechEndTimeMs
+        val isConversationActive = timeSinceLastSpeech < Constants.CONVERSATION_TIMEOUT_MS
+        val currentOnsetFrames = if (isConversationActive) 1 else 4
+
+        if (!isInSpeechSegment && consecutiveSpeechFrames >= currentOnsetFrames) {
             // Start new speech segment
             isInSpeechSegment = true
             speechStartTimeMs = System.currentTimeMillis()
@@ -258,12 +264,17 @@ class AudioCaptureService : Service() {
             _isSpeechDetected.value = false
             updateNotification("Monitoring for speech…")
 
-            if (duration >= Constants.MIN_SPEECH_DURATION_MS) {
+            val timeSinceLastSpeech = System.currentTimeMillis() - lastValidSpeechEndTimeMs
+            val isConversationActive = timeSinceLastSpeech < Constants.CONVERSATION_TIMEOUT_MS
+            val currentMinDuration = if (isConversationActive) Constants.MIN_SPEECH_DURATION_ACTIVE_MS else Constants.MIN_SPEECH_DURATION_IDLE_MS
+
+            if (duration >= currentMinDuration) {
                 // Send final chunk marker
                 extractAndSendChunk(0f, isFinal = true)
-                Log.d(TAG, "Speech segment ended: $currentSegmentId (${duration}ms)")
+                Log.d(TAG, "Speech segment ended: $currentSegmentId (${duration}ms) - State: ${if(isConversationActive) "ACTIVE" else "IDLE"}")
+                lastValidSpeechEndTimeMs = System.currentTimeMillis() // Safely update the baseline tracking to keep mode active
             } else {
-                Log.d(TAG, "Speech segment too short, discarding: ${duration}ms")
+                Log.d(TAG, "Speech segment too short, discarding: ${duration}ms < ${currentMinDuration}ms")
             }
         }
     }

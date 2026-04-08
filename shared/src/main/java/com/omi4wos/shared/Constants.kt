@@ -21,7 +21,12 @@ object Constants {
     // Speech segment extraction
     const val PRE_ROLL_SECONDS = 4.0f // Drastically amplified to cover 3+ second onset delays
     const val POST_ROLL_SECONDS = 1.5f // Audio after speech stops
-    const val MIN_SPEECH_DURATION_MS = 3000L // Minimum speech segment length to aggressively suppress false-positives
+    
+    // Dynamic Hysteresis Constants
+    const val MIN_SPEECH_DURATION_ACTIVE_MS = 500L // Allows "yes/no" when conversing
+    const val MIN_SPEECH_DURATION_IDLE_MS = 3000L // Rejects false-positive traffic when idle
+    const val CONVERSATION_TIMEOUT_MS = 60000L // Timeout to revert back to IDLE state
+
     const val MAX_SPEECH_SEGMENT_SECONDS = 60 // Max single segment
 
     // Classification duty cycle
