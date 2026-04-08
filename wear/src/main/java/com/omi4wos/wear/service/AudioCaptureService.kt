@@ -63,6 +63,7 @@ class AudioCaptureService : Service() {
     private lateinit var circularBuffer: CircularAudioBuffer
     private lateinit var opusEncoder: OpusEncoder
     private lateinit var dataLayerSender: DataLayerSender
+    private lateinit var chunkRepository: ChunkRepository
 
     private var wakeLock: PowerManager.WakeLock? = null
 
@@ -73,7 +74,7 @@ class AudioCaptureService : Service() {
     private var currentSegmentId: String = ""
     private var chunkIndex = 0
     private var isInSpeechSegment = false
-    private val pendingChunks = mutableListOf<AudioChunk>()
+
 
     // Thresholds for hysteresis
     private val speechOnsetFrames = 2 // Need 2 consecutive speech frames to trigger
@@ -89,6 +90,7 @@ class AudioCaptureService : Service() {
         circularBuffer = CircularAudioBuffer(Constants.CIRCULAR_BUFFER_SAMPLES)
         opusEncoder = OpusEncoder()
         dataLayerSender = DataLayerSender(this)
+        chunkRepository = ChunkRepository(this)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -127,10 +129,17 @@ class AudioCaptureService : Service() {
 
         _isRecording.value = true
 
-        // Check phone connectivity
+        // Check phone connectivity and setup background synchronizer
         serviceScope.launch {
-            dataLayerSender.checkConnectivity()
-            _isPhoneConnected.value = dataLayerSender.isConnected
+            while (isActive) {
+                dataLayerSender.checkConnectivity()
+                val connected = dataLayerSender.isConnected
+                _isPhoneConnected.value = connected
+                if (connected) {
+                    syncPendingChunks()
+                }
+                delay(30_000) // Poll sync loop every 30 seconds
+            }
         }
 
         // Start classification loop
@@ -259,14 +268,26 @@ class AudioCaptureService : Service() {
         }
     }
 
-    private fun flushPendingChunks() {
-        if (pendingChunks.isEmpty()) return
-        val chunksToSend = pendingChunks.toList()
-        pendingChunks.clear()
+    private fun syncPendingChunks() {
+        val files = chunkRepository.getPendingChunkFiles()
+        if (files.isEmpty()) return
 
         serviceScope.launch {
-            for (chunk in chunksToSend) {
-                dataLayerSender.sendAudioChunk(chunk)
+            for (file in files) {
+                val chunk = chunkRepository.readChunk(file)
+                if (chunk != null) {
+                    val success = dataLayerSender.sendAudioChunk(chunk)
+                    if (success) {
+                        chunkRepository.deleteChunkFile(file)
+                    } else {
+                        // Connection failed or dropped mid-sync, gracefully abort to retry later
+                        Log.w(TAG, "Sync aborted, connection lost during transmission")
+                        break
+                    }
+                } else {
+                    // File was corrupted or unreadable, discard
+                    chunkRepository.deleteChunkFile(file)
+                }
             }
         }
     }
@@ -286,7 +307,7 @@ class AudioCaptureService : Service() {
                 segmentId = currentSegmentId,
                 isFinal = false
             )
-            pendingChunks.add(chunk)
+            chunkRepository.saveChunk(chunk)
         }
     }
 
@@ -305,11 +326,11 @@ class AudioCaptureService : Service() {
                 segmentId = currentSegmentId,
                 isFinal = isFinal
             )
-            pendingChunks.add(chunk)
+            chunkRepository.saveChunk(chunk)
             
             // Blast the absolute payload completely across BLE natively on sentence completion
             if (isFinal) {
-                flushPendingChunks()
+                syncPendingChunks()
             }
         }
     }

@@ -66,15 +66,16 @@ class DataLayerSender(private val context: Context) {
     /**
      * Send an audio chunk to the phone via MessageClient.
      * Uses a compact binary format for efficiency.
+     * Returns true if successfully transmitted, false if connection is unavailable or fails.
      */
-    suspend fun sendAudioChunk(chunk: AudioChunk) {
+    suspend fun sendAudioChunk(chunk: AudioChunk): Boolean {
         val nodeId = phoneNodeId
         if (nodeId == null) {
             // Try to reconnect
             checkConnectivity()
             if (phoneNodeId == null) {
                 Log.w(TAG, "Cannot send chunk: no phone connected")
-                return
+                return false
             }
         }
 
@@ -107,11 +108,13 @@ class DataLayerSender(private val context: Context) {
 
             Log.d(TAG, "Sent chunk: seg=${chunk.segmentId} idx=${chunk.chunkIndex} " +
                     "size=${payload.size} final=${chunk.isFinal}")
+            return true
         } catch (e: Exception) {
             Log.e(TAG, "Failed to send audio chunk", e)
             // Mark as disconnected, will retry on next send
             isConnected = false
             phoneNodeId = null
+            return false
         }
     }
 
