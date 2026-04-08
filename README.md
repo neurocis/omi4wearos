@@ -18,11 +18,11 @@ Adapted the original version which performed Android transcription, **this cipio
 │                                      │
 │  AudioRecord  (16kHz PCM16 mono)     │
 │       ↓                              │
-│  YAMNet TFLite (0.975s window)       │
+│  Native WebRTC VAD (0.96s buffer)    │
 │       ↓                              │
 │  Linear Buffer + Opus Encoder API    │
 │       ↓                              │
-│  Wear Data Layer → Phone             │
+│  BLE Batch Blast (on phrase end)     │
 └──────────────────────────────────────┘
               ↓  BLE/WiFi (Native Opus Streams)
 ┌──────────────────────────────────────┐
@@ -43,7 +43,7 @@ Adapted the original version which performed Android transcription, **this cipio
 | Module    | Description                                      |
 |-----------|--------------------------------------------------|
 | `:shared` | Common data models, constants, Data Layer paths  |
-| `:wear`   | WearOS watch app — recording, YAMNet classification, native Opus encoding |
+| `:wear`   | WearOS watch app — native AudioRecord, WebRTC GMM detection, and batch opus compression |
 | `:mobile` | Phone companion — Bluetooth aggregator, `.bin` compiler, and Firebase token auto-refresh |
 
 ## Tech Stack
@@ -52,7 +52,7 @@ Adapted the original version which performed Android transcription, **this cipio
 |-------------------|-----------------------------------|
 | Language          | Kotlin                            |
 | UI (Watch/Phone)  | Jetpack Compose + Material3       |
-| ML Inference      | TensorFlow Lite + YAMNet (Local)  |
+| ML Inference      | Native WebRTC C++ Gaussian Mixture|
 | Audio Encoding    | Opus via Android MediaCodec 16kbps|
 | Cloud Upload      | Multipart POST v2/sync-local-files|
 | Authentication    | Omi Firebase IndexedDB tokens     |
@@ -76,14 +76,18 @@ To interface perfectly with Omi Cloud natively, this system securely routes thro
 
 ## How It Works
 
-1. **Watch** continuously monitors audio using an ultra-lightweight YAMNet local ML model for voice activity.
-2. When speech is detected, the watch aggressively extracts a highly optimized Opus audio chunk out of a completely sequential, duplicate-free linearly tracked buffer and streams it over Bluetooth.
-3. The **Phone** listens synchronously, intelligently appending native Opus payloads together matching Omi frame formatting.
-4. Once the sentence drops below the noise floor, the Phone securely uploads `recording_fs320_[timestamp].bin` directly into the Omi Cloud over dual Firebase Authentication.
+1. **Watch** continuously monitors audio natively, routing hardware microphone polling buffers deep inside the DSP strictly every ~1-second (`960ms`) to completely bypass Android OS CPU wake lock draw.
+2. Instead of massive 500-class ML networks, a highly optimized **native C++ WebRTC Engine** performs voice activity detection on the raw PCM array. 
+3. The watch aggregates high-quality Opus speech slices securely into a linear block of memory entirely silently.
+4. When the WebRTC engine flags a closing silence gap, the watch bursts the completely constructed structured chunk payload concurrently over the BLE Data Layer natively (`isFinal=true`), minimizing Bluetooth wakes per sentence to exactly `1`!
+5. The **Phone** listens synchronously, elegantly catching the native Opus payload array.
+6. The Phone then rapidly uploads the `recording_fs320_[timestamp].bin` straight into the Omi Cloud over dual Firebase Authentication.
 
 ## Key Upgrades from Original Base
 
 - **Completely bypassed Android SpeechRecognizer**: The unreliability of Google's local transcription engine on older phones is eliminated.
+- **Extreme Battery WebRTC VAD Integration:** Shredded Google's 5MB TensorFlow Lite `YAMNet` framework out of the watch completely. We evaluate speech directly utilizing Chrome WebRTC Gaussian Mixture algorithms without neural net processing delays!
+- **Data Layer Batch Blasting:** Prevented the watch from keeping the low-energy Bluetooth radio hyper-active every 1 second during sentences. The OS restricts Bluetooth to a single serialized payload blast precisely when the transcript naturally ends!
 - **Flawless Bluetooth De-duplication**: Dual Samsung WearableListeners are strictly filtered using immutable Chunk Index IDs to eliminate audio stuttering over bad connections.
-- **Intelligent Pre-roll Windows**: A massive 2.5s pre-roll algorithmic capture entirely eradicates "cut-off" beginnings of sentences triggered by speech hysteresis windows.
-- **Invisible Auto-Retry Layer**: Failed bin uploads gracefully fall back onto local cache and instantaneously retry uploading without manual intervention explicitly triggered upon app wake.
+- **Intelligent Pre-roll Windows**: A massive 2.5s pre-roll algorithmic capture entirely eradicates "cut-off" beginnings of sentences.
+- **Invisible Auto-Retry Layer**: Failed bin uploads gracefully fall back onto local cache and instantaneously retry uploading without manual intervention implicitly triggered upon app wake.
