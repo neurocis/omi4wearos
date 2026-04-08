@@ -19,9 +19,9 @@ object Constants {
     const val CIRCULAR_BUFFER_SAMPLES = SAMPLE_RATE * CIRCULAR_BUFFER_SECONDS
 
     // Speech segment extraction
-    const val PRE_ROLL_SECONDS = 2.5f // Audio before speech detection
+    const val PRE_ROLL_SECONDS = 4.0f // Drastically amplified to cover 3+ second onset delays
     const val POST_ROLL_SECONDS = 1.5f // Audio after speech stops
-    const val MIN_SPEECH_DURATION_MS = 500L // Minimum speech segment length
+    const val MIN_SPEECH_DURATION_MS = 3000L // Minimum speech segment length to aggressively suppress false-positives
     const val MAX_SPEECH_SEGMENT_SECONDS = 60 // Max single segment
 
     // Classification duty cycle
