@@ -76,19 +76,19 @@ To interface perfectly with Omi Cloud natively, this system securely routes thro
 
 ## How It Works
 
-1. **Watch** continuously monitors audio natively, routing hardware microphone polling buffers deep inside the DSP strictly every ~1-second (`960ms`) to completely bypass Android OS CPU wake lock draw.
-2. Instead of massive 500-class ML networks, a highly optimized **native C++ WebRTC Engine** performs voice activity detection on the raw PCM array. 
-3. The watch aggregates high-quality Opus speech slices securely into a linear block of memory entirely silently.
-4. When the WebRTC engine flags a closing silence gap, the watch bursts the completely constructed structured chunk payload concurrently over the BLE Data Layer natively (`isFinal=true`), minimizing Bluetooth wakes per sentence to exactly `1`!
-5. The **Phone** listens synchronously, elegantly catching the native Opus payload array.
-6. The Phone then rapidly uploads the `recording_fs320_[timestamp].bin` straight into the Omi Cloud over dual Firebase Authentication.
+1. **Watch**: Continuously monitors audio by routing microphone polling buffers into the DSP every `960ms`, ensuring the OS CPU can sleep between reads.
+2. **WebRTC VAD**: A native C++ WebRTC Engine running in a background process evaluates the audio buffer for voice activity.
+3. **Buffering**: Opus-encoded speech frames are batched into a linear block of memory.
+4. **Data Transmission**: Once voice activity ceases, the watch sends the complete structured payload across the Wear Data Layer. This minimizes Bluetooth wake locks to one per sentence.
+5. **Phone**: The companion app listens on the Data Layer, assembling the received Opus payloads into an `.bin` archive.
+6. **Cloud Upload**: The phone pushes the compiled `recording.bin` into the Omi Cloud using standard Firebase Authentication tokens.
 
 ## Key Upgrades from Original Base
 
-- **Completely bypassed Android SpeechRecognizer**: The unreliability of Google's local transcription engine on older phones is eliminated.
-- **Extreme Battery WebRTC VAD Integration:** Shredded Google's 5MB TensorFlow Lite `YAMNet` framework out of the watch completely. We evaluate speech directly utilizing Chrome WebRTC Gaussian Mixture algorithms without neural net processing delays!
-- **Data Layer Batch Blasting:** Prevented the watch from keeping the low-energy Bluetooth radio hyper-active every 1 second during sentences. The OS restricts Bluetooth to a single serialized payload blast precisely when the transcript naturally ends!
-- **Store-and-Forward Caching Engine:** The watch never drops offline phrases into the void. It dynamically serializers native Opus frames redundantly to a dedicated 500MB filesystem directory, automatically polling proximity routines completely across disconnections to flush chronological payloads seamlessly backwards upon Bluetooth re-handshaking!
-- **Flawless Bluetooth De-duplication**: Dual Samsung WearableListeners are strictly filtered using immutable Chunk Index IDs to eliminate audio stuttering over bad connections.
-- **Intelligent Pre-roll Windows**: A massive 2.5s pre-roll algorithmic capture entirely eradicates "cut-off" beginnings of sentences.
-- **Invisible Auto-Retry Layer**: Failed bin uploads gracefully fall back onto local cache and instantaneously retry uploading without manual intervention implicitly triggered upon app wake.
+- **Direct Cloud Integration:** Removed Android SpeechRecognizer, assembling standard Limitless-compatible `.bin` archives that upload directly to the `/v2/sync-local-files` endpoint.
+- **WebRTC VAD Integration:** Replaced the 5MB TensorFlow Lite `YAMNet` framework with native Chromium WebRTC Gaussian Mixture algorithms, drastically reducing battery consumption and memory footprint.
+- **BLE Batch Transfer:** Changed the transmission behavior from streaming every second to batch-transmitting the completed payload at the end of a phrase to reduce radio activity.
+- **Store-and-Forward Caching Engine:** Includes a local disk-caching mechanism (`ChunkRepository`). If Bluetooth connection drops, the watch saves up to 500MB of Opus audio to disk. A background worker syncs the missed files chronologically upon reconnection.
+- **Duplicate Audio Prevention**: Companion dual-listeners track immutable Chunk Index IDs to drop stuttering or duplicated chunks in bad connections.
+- **Algorithmic Pre-roll Windows**: Buffers 2.5s of audio prior to speech detection to prevent sentence cutoff.
+- **Background Upload Retry**: Failed `.bin` uploads are cached natively in a local Room database and re-attempted on next internet connection.
