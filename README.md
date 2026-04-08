@@ -78,10 +78,10 @@ To interface perfectly with Omi Cloud natively, this system securely routes thro
 
 1. **Watch**: Continuously monitors audio by routing microphone polling buffers into the DSP every `960ms`, ensuring the OS CPU can sleep between reads.
 2. **WebRTC VAD**: A native C++ WebRTC Engine running in a background process evaluates the audio buffer for voice activity.
-3. **Buffering**: Opus-encoded speech frames are batched into a linear block of memory.
-4. **Data Transmission**: Once voice activity ceases, the watch sends the complete structured payload across the Wear Data Layer. This minimizes Bluetooth wake locks to one per sentence.
+3. **Local Caching**: Audio containing voice activity is Opus-encoded and immediately serialized to the watch's internal filesystem. This ensures no data is lost if the watch is away from the phone.
+4. **Data Transmission**: Once a sentence concludes, the watch evaluates Bluetooth connectivity. If connected, it batch-transmits all pending payloads across the Wear Data Layer. If disconnected, files are securely retained until a background worker syncs them upon reconnection.
 5. **Phone**: The companion app listens on the Data Layer, assembling the received Opus payloads into an `.bin` archive.
-6. **Cloud Upload**: The phone pushes the compiled `recording.bin` into the Omi Cloud using standard Firebase Authentication tokens.
+6. **Cloud Upload**: The phone pushes the compiled `.bin` archive into the Omi Cloud using standard Firebase Authentication tokens.
 
 ## Key Upgrades from Original Base
 
