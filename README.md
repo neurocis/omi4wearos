@@ -13,9 +13,13 @@ Adapted the original version which performed Android transcription, **this cipio
 ## Quick Install (Pre-compiled Releases)
 If you do not want to compile the code in Android Studio, you can natively download the fully packaged APK files directly from the `/releases` folder in this repository! 
 
-There are precisely two files. Both are required for the framework to function smoothly:
-1. `Omi4wOS_Wear_v1.0.apk` -> Install directly onto your **Watch** (Wear OS) using ADB.
-2. `Omi4wOS_Mobile_v1.0.apk` -> Install directly onto your **Android Phone** so you can securely plug in your private API tokens natively.
+The phone companion APK is required for both watch builds. Pick the watch APK that matches your needs:
+
+| File | Description |
+|---|---|
+| `Omi4wOS_Wear_v1.1_Silero.apk` | **Recommended.** Latest watch build with Silero LSTM VAD — accurate speech detection, rejects engine/fan/clothing noise. Install via ADB onto your **Watch**. |
+| `Omi4wOS_Wear_v1.0.apk` | Original watch build with WebRTC GMM VAD. Smaller APK (30MB vs 84MB) but higher false positive rate. |
+| `Omi4wOS_Mobile_v1.0.apk` | Install onto your **Android Phone** to enter your API tokens and receive audio from the watch. Required regardless of which watch APK you use. |
 
 ## Architecture
 
