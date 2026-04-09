@@ -19,7 +19,7 @@ object Constants {
     const val CIRCULAR_BUFFER_SAMPLES = SAMPLE_RATE * CIRCULAR_BUFFER_SECONDS
 
     // Speech segment extraction
-    const val PRE_ROLL_SECONDS = 1.5f // Reduced from 4.0s — 62.5% less encoding+BLE per segment
+    const val PRE_ROLL_SECONDS = 2.5f // Increased from 1.5s — 1.5s was clipping first words
     const val POST_ROLL_SECONDS = 1.5f // Audio after speech stops
 
     // Dynamic Hysteresis Constants
