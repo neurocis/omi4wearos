@@ -1,162 +1,181 @@
-# omi4wOS — cipioh Direct Cloud Sync Edition
+# omi4wearOS
 
-A multi-module Android/Kotlin project that transforms your WearOS watch into an incredibly efficient, natively integrated Omi speech companion. 
-
-Adapted the original version which performed Android transcription, **this cipioh-edition rewrite fundamentally redesigns the architectural flow to precisely emulate the Omi device.** The watch now generates native 16kbps Opus chunks, seamlessly streams them to the phone companion, and directly constructs Omi-compatible `.bin` archives that are pushed natively into Omi's `/v2/sync-local-files` cloud API for state-of-the-art server-side transcription and intelligence.
+A WearOS app that transforms your smartwatch into a seamless [Omi](https://www.omi.me/) speech companion — capturing, classifying, and streaming speech directly into the Omi ecosystem.
 
 <div align="center">
-  <img src="https://github.com/user-attachments/assets/e8de0170-4512-4a55-bc84-e5f4a6d9b833" width="250" />
-  <img src="https://github.com/user-attachments/assets/096cb612-54f4-4a26-b7c9-17a58bdb2d81" width="250" />
   <img src="https://github.com/user-attachments/assets/825d95c0-ba44-47fa-b80b-8b0d1220ca15" width="250" />
 </div>
 
-## Quick Install (Pre-compiled Releases)
-If you do not want to compile the code in Android Studio, you can natively download the fully packaged APK files directly from the `/releases` folder in this repository! 
+## Overview
 
-There are precisely two files. Both are required for the framework to function smoothly:
-1. `Omi4wOS_Wear_v1.0.apk` -> Install directly onto your **Watch** (Wear OS) using ADB.
-2. `Omi4wOS_Mobile_v1.0.apk` -> Install directly onto your **Android Phone** so you can securely plug in your private API tokens natively.
+The watch runs a lightweight foreground service that continuously monitors ambient audio through a native **WebRTC VAD** (Voice Activity Detection) engine. When speech is detected, it is Opus-encoded on-device and streamed over the **Wear Data Layer** directly to the official **Omi Android app**, which handles transcription, memory creation, and cloud sync — no separate companion app needed.
+
+> **📱 Previous versions** shipped with a standalone Android companion app (`Omi4wOS_Mobile`). This has been **deprecated** in favor of direct integration into the Omi app itself via a [WearOS AudioSource plugin](https://github.com/neurocis/omi/tree/feature/wearos-audio-source), providing a cleaner, single-app experience on the phone.
+
+---
 
 ## Architecture
 
 ```
-┌──────────────────────────────────────┐
-│            WearOS Watch              │
-│                                      │
-│  AudioRecord  (16kHz PCM16 mono)     │
-│       ↓                              │
-│  Loudness Gate (52dB RMS pre-filter) │
-│       ↓                              │
-│  Silero VAD LSTM (OnnxRuntime 1.14)  │
-│       ↓                              │
-│  Linear Buffer + Opus Encoder API    │
-│       ↓                              │
-│  BLE Batch Blast (on phrase end)     │
-└──────────────────────────────────────┘
-              ↓  BLE/WiFi (Native Opus Streams)
-┌──────────────────────────────────────┐
-│          Phone Companion             │
-│                                      │
-│  WearableListener / Direct Receivers │
-│       ↓                              │
-│  Construct Omi (.bin) archive        │
-│       ↓                              │
-│  Omi Cloud Core (/sync-local-files)  │
-│       ↓                              │
-│  Local SQLite Cache (Upload History) │
-└──────────────────────────────────────┘
+┌───────────────────────────────────────────┐
+│              WearOS Watch                 │
+│                                           │
+│  AudioRecord (16 kHz · PCM16 · mono)      │
+│       ↓                                   │
+│  30s Circular Buffer (480K samples RAM)   │
+│       ↓                                   │
+│  WebRTC VAD  (960 ms evaluation windows)  │
+│       ↓                                   │
+│  Dynamic Hysteresis State Machine         │
+│    IDLE  → 3.0 s gate · 4-frame onset     │
+│    ACTIVE → 0.5 s gate · 1-frame onset    │
+│       ↓                                   │
+│  4.0 s Pre-roll + 1.5 s Post-roll         │
+│       ↓                                   │
+│  Opus Encoder (MediaCodec · 24 kbps)      │
+│       ↓                                   │
+│  Store-and-Forward Cache (≤ 500 MB disk)  │
+│       ↓                                   │
+│  Batch Blast via Wear Data Layer          │
+└───────────────────────────────────────────┘
+               ↓  MessageClient (binary Opus chunks)
+┌───────────────────────────────────────────┐
+│         Omi Android App (Flutter)         │
+│                                           │
+│  WearOsListenerService  (Kotlin native)   │
+│       ↓                                   │
+│  WearOsAudioBridge  (EventChannel)        │
+│       ↓                                   │
+│  WearOsSource  (AudioSource interface)    │
+│       ↓                                   │
+│  Existing Omi Pipeline:                   │
+│    • WAL (offline cache + batch sync)     │
+│    • WebSocket → wss://api.omi.me/v4/listen│
+│    • Real-time transcription + memories   │
+└───────────────────────────────────────────┘
 ```
 
-## Modules
+## Quick Install
 
-| Module    | Description                                      |
-|-----------|--------------------------------------------------|
-| `:shared` | Common data models, constants, Data Layer paths  |
-| `:wear`   | WearOS watch app — native AudioRecord, Silero LSTM VAD, and batch Opus compression |
-| `:mobile` | Phone companion — Bluetooth aggregator, `.bin` compiler, and Firebase token auto-refresh |
+A pre-built watch APK is available in [`/releases`](releases/):
 
-## Tech Stack
+| File | Target | Install |
+|------|--------|---------|
+| `Omi4wOS_Wear_v1.0.apk` | WearOS watch | `adb install Omi4wOS_Wear_v1.0.apk` |
 
-| Component         | Technology                              |
-|-------------------|-----------------------------------------|
-| Language          | Kotlin                                  |
-| UI (Watch/Phone)  | Jetpack Compose + Material3             |
-| VAD               | Silero LSTM via OnnxRuntime 1.14.0      |
-| Audio Encoding    | Opus via Android MediaCodec 16kbps      |
-| Cloud Upload      | Multipart POST v2/sync-local-files      |
-| Authentication    | Omi Firebase IndexedDB tokens           |
+You also need the **Omi Android app** with WearOS support on your phone — see [Omi App Integration](#omi-app-integration) below.
 
-## Prerequisites
+### Install watch APK via ADB
 
-- Android Studio Hedgehog (2023.1.1)+
-- JDK 17, Android SDK 34
-- A WearOS watch (Android 11+)
-- An Android phone (Android 9+)
+```bash
+# Enable Developer Options on watch:
+#   Settings → System → About → tap Build Number 7 times
+#   Settings → Developer options → enable ADB debugging + Wireless debugging
 
-## Configuration & Cloud Setup
+# Pair (one-time)
+adb pair <WATCH_IP>:<PAIR_PORT>    # enter pairing code shown on watch
 
-To interface perfectly with Omi Cloud natively, this system securely routes through Omi's Firebase Backend. You have to provide your device with your session tokens extracted from your browser.
+# Connect
+adb connect <WATCH_IP>:5555
 
-1. Open exactly **[app.omi.me](https://app.omi.me)** in Chrome and sign in to your dashboard.
-2. Open Chrome Developer Tools (`F12` or `Cmd+Option+I`)
-3. **Grab the ID Token:** Navigate to the `Network` tab, reload the page, click any request, look at the Request Headers, and copy the long string after `Authorization: Bearer `.
-4. **Grab the Refresh Token & API Key:** Navigate to the `Application` tab. Open `IndexedDB` → `firebaseLocalStorageDb`. Copy the `refreshToken` from your user block. Also grab the `AIza...` Web API key from any network request URL parameter.
-5. Paste these into your **omi4wOS Companion Settings UI**. The app will natively auto-renew your token forever!
+# Install
+adb install releases/Omi4wOS_Wear_v1.0.apk
+```
 
-## How It Works
+### Build from source
 
-1. **Watch**: Continuously monitors audio by routing microphone polling buffers into the DSP every `960ms`, ensuring the OS CPU can sleep between reads.
-2. **Loudness Gate**: Each 960ms window is checked against a 52dB RMS threshold before any inference runs. Windows below the threshold are skipped entirely, keeping the CPU idle during silence.
-3. **Silero VAD**: An LSTM neural network (Silero) evaluates each window that passes the loudness gate. It classifies 30 × 32ms frames per window and reports a speech probability per frame. Windows with ≥4 frames above 0.5 probability are flagged as speech.
-4. **Local Caching**: Audio containing voice activity is Opus-encoded and immediately serialized to the watch's internal filesystem. This ensures no data is lost if the watch is away from the phone.
-5. **Data Transmission**: Once a sentence concludes, the watch evaluates Bluetooth connectivity. If connected, it batch-transmits all pending payloads across the Wear Data Layer. If disconnected, files are securely retained until a background worker syncs them upon reconnection.
-6. **Phone**: The companion app listens on the Data Layer, assembling the received Opus payloads into an `.bin` archive.
-7. **Cloud Upload**: The phone pushes the compiled `.bin` archive into the Omi Cloud using standard Firebase Authentication tokens.
+```bash
+git clone https://github.com/neurocis/omi4WearOS.git
+cd omi4WearOS
+./gradlew assembleDebug
+# Output: wear/build/outputs/apk/debug/wear-debug.apk
+```
 
-## Key Upgrades from Original Base
-
-- **Direct Cloud Integration:** Removed Android SpeechRecognizer, assembling standard Limitless-compatible `.bin` archives that upload directly to the `/v2/sync-local-files` endpoint.
-- **Silero LSTM VAD:** Replaced the TFLite YAMNet classifier with Silero, a purpose-built voice activity detection LSTM trained specifically to distinguish human speech from environmental noise. See [VAD Selection Rationale](#vad-selection-rationale) below.
-- **BLE Batch Transfer:** Changed the transmission behavior from streaming every second to batch-transmitting the completed payload at the end of a phrase to reduce radio activity.
-- **Store-and-Forward Caching Engine:** Includes a local disk-caching mechanism (`ChunkRepository`). If Bluetooth connection drops, the watch saves up to 500MB of Opus audio to disk. A background worker syncs the missed files chronologically upon reconnection.
-- **Duplicate Audio Prevention**: Companion dual-listeners track immutable Chunk Index IDs to drop stuttering or duplicated chunks in bad connections.
-- **Dynamic Conversational Hysteresis**: Switches detection sensitivity between Idle Mode (2 consecutive positive windows required) and Active Conversation Mode (1 window sufficient), preventing false positives during silence while remaining responsive mid-conversation.
-- **Pre-roll Buffer**: Retains 1.5s of audio prior to speech onset to prevent sentence cut-off when transitioning from idle, without the encoding overhead of longer buffers.
-- **Idle Power Throttling**: Classification interval doubles from 960ms to 1920ms after 5 minutes of silence. Connectivity polling reduced from 30s to 2 minutes.
-- **Background Upload Retry**: Failed `.bin` uploads are cached natively in a local Room database and re-attempted on next internet connection.
+Requires JDK 17 and Android SDK 34.
 
 ---
 
-## VAD Selection Rationale
+## Omi App Integration
 
-Getting reliable voice activity detection on the Galaxy Watch 7 required working through several approaches. This section documents what was tried and why Silero was ultimately chosen.
+The watch streams audio to the official Omi Android app through a minimal, additive integration — **4 new files, ~480 lines of code, zero existing code modified:**
 
-### The Problem
+| File | Layer | Purpose |
+|------|-------|---------|
+| `WearOsListenerService.kt` | Android native | Receives binary audio chunks via Wear Data Layer `MessageClient` |
+| `WearOsAudioBridge.kt` | Android native | Singleton `EventChannel` + `MethodChannel` bridge to Flutter |
+| `wearos_source.dart` | Flutter | `AudioSource` implementation — converts Opus payloads into WAL frames |
+| `wearos_service.dart` | Flutter | Singleton service managing connection state and audio streams |
 
-The Galaxy Watch 7 runs a 32-bit ARM processor (`armeabi-v7a`). This is a hard constraint that rules out several otherwise viable options.
+The integration plugs into the Omi app's existing `CaptureProvider` pipeline, so watch audio is processed identically to BLE Omi hardware devices and the phone microphone — including WAL caching, WebSocket real-time transcription, and memory creation.
 
-### Options Evaluated
+**Branch:** [`feature/wearos-audio-source`](https://github.com/neurocis/omi/tree/feature/wearos-audio-source)
 
-**WebRTC GMM (original)**
-The watch originally used a WebRTC Gaussian Mixture Model — a very fast native C++ classifier from the Chromium telephony stack. It is essentially zero-cost in battery and CPU terms. However it was designed for phone call quality improvement, not ambient monitoring. In practice it generated significant false positives from:
-- Fan and HVAC noise (broadband, classified as speech)
-- Motorcycle and engine sounds (harmonic content in the speech frequency range)
-- Clothing rustle and watch movement
+---
 
-Tuning attempts (raising thresholds, adding energy variance checks, adding pitch detection and pitch stability gates) progressively reduced false positives but could not fully solve the problem without also missing real speech.
+## How It Works
 
-**Silero via OnnxRuntime (attempted)**
-Silero is an LSTM neural network trained specifically on the task of "is this human speech or not?" across thousands of hours of diverse real-world audio. The `gkonovalov/android-vad` library bundles the Silero ONNX model with OnnxRuntime as its inference backend.
+1. **Continuous Monitoring** — A foreground service polls the microphone in `960 ms` evaluation windows (48 × 20 ms WebRTC frames), allowing the CPU to sleep between reads for minimal battery drain.
 
-This initially crashed with `SIGBUS BUS_ADRALN` (bus error, unaligned memory access) on every launch. The root cause: OnnxRuntime's armeabi-v7a native build uses ARM NEON SIMD instructions that require 16-byte memory alignment, but its protobuf-based model parser performs unaligned reads on internal buffers — a bug present in OnnxRuntime 1.15–1.20 on 32-bit ARM. Loading the model via file path (mmap) rather than byte array was attempted but the crash site was in the parser itself, not the loader.
+2. **Voice Activity Detection** — Each window is evaluated by a native C++ WebRTC Gaussian Mixture Model running in `VERY_AGGRESSIVE` mode. A 30-second circular buffer retains recent audio in RAM.
 
-**Silero TFLite**
-The Silero team does not provide a TFLite export and has stated they are not willing to produce one. This path is unavailable without converting the model yourself offline (ONNX → TF SavedModel → TFLite), which is non-trivial and may produce a broken graph due to LSTM op compatibility issues.
+3. **Dynamic Hysteresis** — A two-state machine manages speech boundaries:
+   - **IDLE mode** — Requires 3.0 s of sustained speech across 4 consecutive positive frames to trigger (rejects traffic, TV, background noise).
+   - **ACTIVE mode** — Drops to 0.5 s / 1 frame for responsive conversational capture. Reverts to IDLE after 60 s of silence.
 
-**YAMNet TFLite**
-YAMNet is a TFLite-backed audio event classifier originally used in this project. TFLite has proper armeabi-v7a support. However it was replaced previously specifically because of battery drain — YAMNet processes audio at 975ms windows with a significantly heavier inference cost than Silero, and the original implementation ran it on every frame continuously rather than gating it.
+4. **Pre-roll & Encoding** — When speech is confirmed, 4.0 s of pre-roll audio is extracted from the circular buffer to capture the beginning of the utterance. The segment is Opus-encoded at 24 kbps via Android `MediaCodec`.
 
-### The Fix
+5. **Store-and-Forward** — Encoded chunks are written to the watch's internal storage (`ChunkRepository`, capped at 500 MB). If Bluetooth is connected, chunks are batch-transmitted at phrase boundaries via the Wear `MessageClient`. If disconnected, a background worker syncs them chronologically upon reconnection.
 
-OnnxRuntime **1.14.0** does not have the armeabi-v7a alignment bug present in later versions. By pinning to 1.14.0 (and excluding the version pulled in transitively by the gkonovalov silero library), Silero initializes and runs inference correctly on the Galaxy Watch 7.
+6. **Omi Processing** — The Omi app receives chunks through its `WearOsAudioSource`, feeding them into the standard WAL + WebSocket transcription pipeline for real-time processing and memory creation.
 
-```kotlin
-implementation("com.github.gkonovalov.android-vad:silero:2.0.7") {
-    exclude(group = "com.microsoft.onnxruntime", module = "onnxruntime-android")
-}
-implementation("com.microsoft.onnxruntime:onnxruntime-android:1.14.0")
-```
+---
 
-The model is also extracted from APK assets to `filesDir` on first launch and loaded via file path rather than byte array, keeping memory access patterns as safe as possible.
+## Modules
 
-### Why Silero Over the Alternatives
+| Module | Description | Key Files |
+|--------|-------------|-----------|
+| `:wear` | WearOS watch app | `AudioCaptureService.kt` (404 lines) · `SpeechClassifier.kt` · `OpusEncoder.kt` · `CircularAudioBuffer.kt` · `ChunkRepository.kt` · `DataLayerSender.kt` |
+| `:shared` | Common data models | `AudioChunk.kt` · `Constants.kt` · `DataLayerPaths.kt` |
 
-| | WebRTC GMM | YAMNet | Silero |
-|---|---|---|---|
-| Inference cost | ~2ms | ~150ms | ~120ms |
-| False positive rate | High | Low | Very low |
-| Engine/motor noise | Fails | Passes | Passes |
-| armeabi-v7a support | ✓ | ✓ | ✓ (OnnxRuntime 1.14.0) |
-| Purpose-built for VAD | No | No | Yes |
+## Tech Stack
 
-Silero was trained specifically for voice activity detection rather than general audio classification (YAMNet) or telephony noise suppression (WebRTC). This specificity is what allows it to correctly reject motorcycle sounds, fan noise, music, and other environmental audio that defeated heuristic approaches.
+| Component | Technology |
+|-----------|------------|
+| Language | Kotlin |
+| UI | Jetpack Compose · Wear Material |
+| Voice Detection | WebRTC C++ GMM (`android-vad:webrtc:2.0.7`) |
+| Audio Encoding | Opus via Android MediaCodec (24 kbps · 20 ms frames) |
+| Data Transport | Wear Data Layer `MessageClient` |
+| Local Caching | File-based store-and-forward (`ChunkRepository`) |
+| Min SDK | 30 (Android 11 / WearOS 3) |
+| Target SDK | 34 |
+
+## Key Technical Parameters
+
+| Parameter | Value |
+|-----------|-------|
+| Sample rate | 16 kHz mono PCM16 |
+| VAD evaluation window | 960 ms (48 × 20 ms frames) |
+| Circular buffer | 30 s (480,000 samples) |
+| Pre-roll | 4.0 s |
+| Post-roll | 1.5 s |
+| Idle gate | 3.0 s sustained speech |
+| Active gate | 0.5 s sustained speech |
+| Conversation timeout | 60 s → revert to IDLE |
+| Opus bitrate | 24 kbps |
+| Opus frame size | 20 ms (320 samples) |
+| Max cache | 500 MB on-watch |
+| Max segment length | 60 s |
+| Data Layer path | `/audio/speech` |
+
+---
+
+## Prerequisites
+
+- A **WearOS watch** running Android 11+ (Wear OS 3+)
+- An **Android phone** with the [Omi app](https://github.com/neurocis/omi/tree/feature/wearos-audio-source) (WearOS-enabled build)
+- For building: Android Studio Hedgehog+, JDK 17, Android SDK 34
+
+## License
+
+See [LICENSE](LICENSE) for details.

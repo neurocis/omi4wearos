@@ -19,4 +19,3 @@ rootProject.name = "omi4wos"
 
 include(":shared")
 include(":wear")
-include(":mobile")

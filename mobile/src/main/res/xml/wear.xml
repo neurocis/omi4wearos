@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<wearableApp>
-    <versionCode>1</versionCode>
-    <versionName>1.0.0</versionName>
-    <rawCapabilities>
-        <capability name="omi4wos_phone" />
-    </rawCapabilities>
-</wearableApp>
