@@ -76,8 +76,11 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-guava:1.8.1")
 
-    // Native Gaussian WebRTC VAD
-    implementation("com.github.gkonovalov.android-vad:webrtc:2.0.7")
+    // Silero VAD with downgraded OnnxRuntime (1.20 SIGBUS on armeabi-v7a, testing 1.14.1)
+    implementation("com.github.gkonovalov.android-vad:silero:2.0.7") {
+        exclude(group = "com.microsoft.onnxruntime", module = "onnxruntime-android")
+    }
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.14.0")
 
     // Wear Tiles (for tile service)
     implementation("androidx.wear.tiles:tiles:1.4.0")

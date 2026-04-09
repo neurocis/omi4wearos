@@ -77,7 +77,7 @@ class AudioCaptureService : Service() {
 
 
     // Thresholds for hysteresis
-    private val speechOffsetFrames = 5 // Need 5 consecutive silence frames to end
+    private val speechOffsetFrames = 3 // Need 3 consecutive silence frames to end (Silero windows ~1.2s each)
 
     // Dynamic Conversation Tracking
     private var lastValidSpeechEndTimeMs: Long = 0L
@@ -140,7 +140,7 @@ class AudioCaptureService : Service() {
                 if (connected) {
                     syncPendingChunks()
                 }
-                delay(30_000) // Poll sync loop every 30 seconds
+                delay(Constants.CONNECTIVITY_POLL_INTERVAL_MS)
             }
         }
 
@@ -174,11 +174,13 @@ class AudioCaptureService : Service() {
 
     /**
      * Main classification loop: reads audio windows from the circular buffer,
-     * classifies with YAMNet, and handles speech segment extraction.
+     * classifies with WebRTC VAD, and handles speech segment extraction.
+     * Slows to half-rate after 5 minutes of silence to reduce CPU usage.
      */
     private suspend fun classificationLoop() {
         val windowSamples = Constants.WEBRTC_INPUT_SAMPLES
         val windowBuffer = ShortArray(windowSamples)
+        var lastSpeechDetectedMs = System.currentTimeMillis()
 
         while (serviceScope.isActive) {
             // Wait until we have enough samples
@@ -194,7 +196,8 @@ class AudioCaptureService : Service() {
             val rmsDb = calculateRmsDb(windowBuffer)
             if (rmsDb < Constants.LOUDNESS_THRESHOLD_DB) {
                 handleSilenceFrame()
-                delay(Constants.CLASSIFICATION_INTERVAL_MS)
+                val interval = classificationInterval(lastSpeechDetectedMs)
+                delay(interval)
                 continue
             }
 
@@ -202,12 +205,26 @@ class AudioCaptureService : Service() {
             val result = speechClassifier.classify(windowBuffer)
 
             if (result.isSpeech) {
+                lastSpeechDetectedMs = System.currentTimeMillis()
                 handleSpeechFrame(result.confidence)
             } else {
                 handleSilenceFrame()
             }
 
-            delay(Constants.CLASSIFICATION_INTERVAL_MS)
+            delay(classificationInterval(lastSpeechDetectedMs))
+        }
+    }
+
+    /**
+     * Returns the classification poll interval. Doubles to 1920ms after 5 minutes of inactivity
+     * to reduce CPU wake cycles during extended silence.
+     */
+    private fun classificationInterval(lastSpeechDetectedMs: Long): Long {
+        val idleMs = System.currentTimeMillis() - lastSpeechDetectedMs
+        return if (idleMs > Constants.IDLE_SLOWDOWN_AFTER_MS) {
+            Constants.IDLE_CLASSIFICATION_INTERVAL_MS
+        } else {
+            Constants.CLASSIFICATION_INTERVAL_MS
         }
     }
 
@@ -217,7 +234,7 @@ class AudioCaptureService : Service() {
 
         val timeSinceLastSpeech = System.currentTimeMillis() - lastValidSpeechEndTimeMs
         val isConversationActive = timeSinceLastSpeech < Constants.CONVERSATION_TIMEOUT_MS
-        val currentOnsetFrames = if (isConversationActive) 1 else 4
+        val currentOnsetFrames = if (isConversationActive) 1 else 2 // Silero is accurate — 1 positive window in ACTIVE, 2 in IDLE
 
         if (!isInSpeechSegment && consecutiveSpeechFrames >= currentOnsetFrames) {
             // Start new speech segment
@@ -272,10 +289,13 @@ class AudioCaptureService : Service() {
                 // Send final chunk marker
                 extractAndSendChunk(0f, isFinal = true)
                 Log.d(TAG, "Speech segment ended: $currentSegmentId (${duration}ms) - State: ${if(isConversationActive) "ACTIVE" else "IDLE"}")
-                lastValidSpeechEndTimeMs = System.currentTimeMillis() // Safely update the baseline tracking to keep mode active
+                lastValidSpeechEndTimeMs = System.currentTimeMillis()
             } else {
                 Log.d(TAG, "Speech segment too short, discarding: ${duration}ms < ${currentMinDuration}ms")
             }
+            // Reset Silero LSTM state so residual context from this segment doesn't
+            // bleed into the next detection window
+            speechClassifier.resetState()
         }
     }
 

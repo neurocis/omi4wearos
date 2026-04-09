@@ -10,18 +10,18 @@ object Constants {
     const val BITS_PER_SAMPLE = 16
     const val BYTES_PER_SAMPLE = BITS_PER_SAMPLE / 8
 
-    // WebRTC VAD parameters
-    const val WEBRTC_INPUT_SAMPLES = 15360 // 0.960s at 16kHz (exactly 48 frames of 20ms)
-    const val LOUDNESS_THRESHOLD_DB = 45.0
+    // Silero VAD parameters
+    const val WEBRTC_INPUT_SAMPLES = 15360 // 0.960s at 16kHz (exactly 30 frames of 32ms)
+    const val LOUDNESS_THRESHOLD_DB = 52.0 // Raised from 45dB to filter watch vibration and clothing rustle
 
-    // Circular buffer: store last 30 seconds of audio
-    const val CIRCULAR_BUFFER_SECONDS = 30
+    // Circular buffer: store last 20 seconds of audio (pre-roll is 1.5s, 20s is more than sufficient)
+    const val CIRCULAR_BUFFER_SECONDS = 20
     const val CIRCULAR_BUFFER_SAMPLES = SAMPLE_RATE * CIRCULAR_BUFFER_SECONDS
 
     // Speech segment extraction
-    const val PRE_ROLL_SECONDS = 4.0f // Drastically amplified to cover 3+ second onset delays
+    const val PRE_ROLL_SECONDS = 1.5f // Reduced from 4.0s — 62.5% less encoding+BLE per segment
     const val POST_ROLL_SECONDS = 1.5f // Audio after speech stops
-    
+
     // Dynamic Hysteresis Constants
     const val MIN_SPEECH_DURATION_ACTIVE_MS = 500L // Allows "yes/no" when conversing
     const val MIN_SPEECH_DURATION_IDLE_MS = 3000L // Rejects false-positive traffic when idle
@@ -31,6 +31,11 @@ object Constants {
 
     // Classification duty cycle
     const val CLASSIFICATION_INTERVAL_MS = 960L // ~1 WebRTC polling window
+    const val IDLE_CLASSIFICATION_INTERVAL_MS = 1920L // 2× slower loop during extended silence
+    const val IDLE_SLOWDOWN_AFTER_MS = 300_000L // 5 min without speech → switch to slow interval
+
+    // Connectivity sync
+    const val CONNECTIVITY_POLL_INTERVAL_MS = 120_000L // Check every 2 min (was 30s)
 
     // Opus encoder parameters
     const val OPUS_BITRATE = 24000 // 24 kbps - good for speech

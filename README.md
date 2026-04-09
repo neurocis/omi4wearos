@@ -25,7 +25,9 @@ There are precisely two files. Both are required for the framework to function s
 │                                      │
 │  AudioRecord  (16kHz PCM16 mono)     │
 │       ↓                              │
-│  Native WebRTC VAD (0.96s buffer)    │
+│  Loudness Gate (52dB RMS pre-filter) │
+│       ↓                              │
+│  Silero VAD LSTM (OnnxRuntime 1.14)  │
 │       ↓                              │
 │  Linear Buffer + Opus Encoder API    │
 │       ↓                              │
@@ -50,19 +52,19 @@ There are precisely two files. Both are required for the framework to function s
 | Module    | Description                                      |
 |-----------|--------------------------------------------------|
 | `:shared` | Common data models, constants, Data Layer paths  |
-| `:wear`   | WearOS watch app — native AudioRecord, WebRTC GMM detection, and batch opus compression |
+| `:wear`   | WearOS watch app — native AudioRecord, Silero LSTM VAD, and batch Opus compression |
 | `:mobile` | Phone companion — Bluetooth aggregator, `.bin` compiler, and Firebase token auto-refresh |
 
 ## Tech Stack
 
-| Component         | Technology                        |
-|-------------------|-----------------------------------|
-| Language          | Kotlin                            |
-| UI (Watch/Phone)  | Jetpack Compose + Material3       |
-| ML Inference      | Native WebRTC C++ Gaussian Mixture|
-| Audio Encoding    | Opus via Android MediaCodec 16kbps|
-| Cloud Upload      | Multipart POST v2/sync-local-files|
-| Authentication    | Omi Firebase IndexedDB tokens     |
+| Component         | Technology                              |
+|-------------------|-----------------------------------------|
+| Language          | Kotlin                                  |
+| UI (Watch/Phone)  | Jetpack Compose + Material3             |
+| VAD               | Silero LSTM via OnnxRuntime 1.14.0      |
+| Audio Encoding    | Opus via Android MediaCodec 16kbps      |
+| Cloud Upload      | Multipart POST v2/sync-local-files      |
+| Authentication    | Omi Firebase IndexedDB tokens           |
 
 ## Prerequisites
 
@@ -84,19 +86,77 @@ To interface perfectly with Omi Cloud natively, this system securely routes thro
 ## How It Works
 
 1. **Watch**: Continuously monitors audio by routing microphone polling buffers into the DSP every `960ms`, ensuring the OS CPU can sleep between reads.
-2. **WebRTC VAD**: A native C++ WebRTC Engine running in a background process evaluates the audio buffer for voice activity.
-3. **Local Caching**: Audio containing voice activity is Opus-encoded and immediately serialized to the watch's internal filesystem. This ensures no data is lost if the watch is away from the phone.
-4. **Data Transmission**: Once a sentence concludes, the watch evaluates Bluetooth connectivity. If connected, it batch-transmits all pending payloads across the Wear Data Layer. If disconnected, files are securely retained until a background worker syncs them upon reconnection.
-5. **Phone**: The companion app listens on the Data Layer, assembling the received Opus payloads into an `.bin` archive.
-6. **Cloud Upload**: The phone pushes the compiled `.bin` archive into the Omi Cloud using standard Firebase Authentication tokens.
+2. **Loudness Gate**: Each 960ms window is checked against a 52dB RMS threshold before any inference runs. Windows below the threshold are skipped entirely, keeping the CPU idle during silence.
+3. **Silero VAD**: An LSTM neural network (Silero) evaluates each window that passes the loudness gate. It classifies 30 × 32ms frames per window and reports a speech probability per frame. Windows with ≥4 frames above 0.5 probability are flagged as speech.
+4. **Local Caching**: Audio containing voice activity is Opus-encoded and immediately serialized to the watch's internal filesystem. This ensures no data is lost if the watch is away from the phone.
+5. **Data Transmission**: Once a sentence concludes, the watch evaluates Bluetooth connectivity. If connected, it batch-transmits all pending payloads across the Wear Data Layer. If disconnected, files are securely retained until a background worker syncs them upon reconnection.
+6. **Phone**: The companion app listens on the Data Layer, assembling the received Opus payloads into an `.bin` archive.
+7. **Cloud Upload**: The phone pushes the compiled `.bin` archive into the Omi Cloud using standard Firebase Authentication tokens.
 
 ## Key Upgrades from Original Base
 
 - **Direct Cloud Integration:** Removed Android SpeechRecognizer, assembling standard Limitless-compatible `.bin` archives that upload directly to the `/v2/sync-local-files` endpoint.
-- **WebRTC VAD Integration:** Replaced the 5MB TensorFlow Lite `YAMNet` framework with native Chromium WebRTC Gaussian Mixture algorithms, drastically reducing battery consumption and memory footprint.
+- **Silero LSTM VAD:** Replaced the TFLite YAMNet classifier with Silero, a purpose-built voice activity detection LSTM trained specifically to distinguish human speech from environmental noise. See [VAD Selection Rationale](#vad-selection-rationale) below.
 - **BLE Batch Transfer:** Changed the transmission behavior from streaming every second to batch-transmitting the completed payload at the end of a phrase to reduce radio activity.
 - **Store-and-Forward Caching Engine:** Includes a local disk-caching mechanism (`ChunkRepository`). If Bluetooth connection drops, the watch saves up to 500MB of Opus audio to disk. A background worker syncs the missed files chronologically upon reconnection.
 - **Duplicate Audio Prevention**: Companion dual-listeners track immutable Chunk Index IDs to drop stuttering or duplicated chunks in bad connections.
-- **Dynamic Conversational Hysteresis**: Natively switches WebRTC constraints between a strict 3.8-second environmental noise wall (Idle Mode) to an aggressive 0.9-second word-catcher (Active Conversation logic), providing flawless false-positive prevention without sacrificing short dialog responses.
-- **Amplified Pre-roll Windows**: Buffers 4.0s of audio natively backwards through RAM prior to speech detection to effortlessly prevent sentence cutoff when overcoming the strict Idle Mode boundary walls.
+- **Dynamic Conversational Hysteresis**: Switches detection sensitivity between Idle Mode (2 consecutive positive windows required) and Active Conversation Mode (1 window sufficient), preventing false positives during silence while remaining responsive mid-conversation.
+- **Pre-roll Buffer**: Retains 1.5s of audio prior to speech onset to prevent sentence cut-off when transitioning from idle, without the encoding overhead of longer buffers.
+- **Idle Power Throttling**: Classification interval doubles from 960ms to 1920ms after 5 minutes of silence. Connectivity polling reduced from 30s to 2 minutes.
 - **Background Upload Retry**: Failed `.bin` uploads are cached natively in a local Room database and re-attempted on next internet connection.
+
+---
+
+## VAD Selection Rationale
+
+Getting reliable voice activity detection on the Galaxy Watch 7 required working through several approaches. This section documents what was tried and why Silero was ultimately chosen.
+
+### The Problem
+
+The Galaxy Watch 7 runs a 32-bit ARM processor (`armeabi-v7a`). This is a hard constraint that rules out several otherwise viable options.
+
+### Options Evaluated
+
+**WebRTC GMM (original)**
+The watch originally used a WebRTC Gaussian Mixture Model — a very fast native C++ classifier from the Chromium telephony stack. It is essentially zero-cost in battery and CPU terms. However it was designed for phone call quality improvement, not ambient monitoring. In practice it generated significant false positives from:
+- Fan and HVAC noise (broadband, classified as speech)
+- Motorcycle and engine sounds (harmonic content in the speech frequency range)
+- Clothing rustle and watch movement
+
+Tuning attempts (raising thresholds, adding energy variance checks, adding pitch detection and pitch stability gates) progressively reduced false positives but could not fully solve the problem without also missing real speech.
+
+**Silero via OnnxRuntime (attempted)**
+Silero is an LSTM neural network trained specifically on the task of "is this human speech or not?" across thousands of hours of diverse real-world audio. The `gkonovalov/android-vad` library bundles the Silero ONNX model with OnnxRuntime as its inference backend.
+
+This initially crashed with `SIGBUS BUS_ADRALN` (bus error, unaligned memory access) on every launch. The root cause: OnnxRuntime's armeabi-v7a native build uses ARM NEON SIMD instructions that require 16-byte memory alignment, but its protobuf-based model parser performs unaligned reads on internal buffers — a bug present in OnnxRuntime 1.15–1.20 on 32-bit ARM. Loading the model via file path (mmap) rather than byte array was attempted but the crash site was in the parser itself, not the loader.
+
+**Silero TFLite**
+The Silero team does not provide a TFLite export and has stated they are not willing to produce one. This path is unavailable without converting the model yourself offline (ONNX → TF SavedModel → TFLite), which is non-trivial and may produce a broken graph due to LSTM op compatibility issues.
+
+**YAMNet TFLite**
+YAMNet is a TFLite-backed audio event classifier originally used in this project. TFLite has proper armeabi-v7a support. However it was replaced previously specifically because of battery drain — YAMNet processes audio at 975ms windows with a significantly heavier inference cost than Silero, and the original implementation ran it on every frame continuously rather than gating it.
+
+### The Fix
+
+OnnxRuntime **1.14.0** does not have the armeabi-v7a alignment bug present in later versions. By pinning to 1.14.0 (and excluding the version pulled in transitively by the gkonovalov silero library), Silero initializes and runs inference correctly on the Galaxy Watch 7.
+
+```kotlin
+implementation("com.github.gkonovalov.android-vad:silero:2.0.7") {
+    exclude(group = "com.microsoft.onnxruntime", module = "onnxruntime-android")
+}
+implementation("com.microsoft.onnxruntime:onnxruntime-android:1.14.0")
+```
+
+The model is also extracted from APK assets to `filesDir` on first launch and loaded via file path rather than byte array, keeping memory access patterns as safe as possible.
+
+### Why Silero Over the Alternatives
+
+| | WebRTC GMM | YAMNet | Silero |
+|---|---|---|---|
+| Inference cost | ~2ms | ~150ms | ~120ms |
+| False positive rate | High | Low | Very low |
+| Engine/motor noise | Fails | Passes | Passes |
+| armeabi-v7a support | ✓ | ✓ | ✓ (OnnxRuntime 1.14.0) |
+| Purpose-built for VAD | No | No | Yes |
+
+Silero was trained specifically for voice activity detection rather than general audio classification (YAMNet) or telephony noise suppression (WebRTC). This specificity is what allows it to correctly reject motorcycle sounds, fan noise, music, and other environmental audio that defeated heuristic approaches.
