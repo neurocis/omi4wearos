@@ -1,8 +1,8 @@
-# omi4wOS — cipioh Direct Cloud Sync Edition
+# omi4wearOS — WearOS Watch Module for Omi
 
-A multi-module Android/Kotlin project that transforms your WearOS watch into an incredibly efficient, natively integrated Omi speech companion. 
+A WearOS watch app that transforms your smartwatch into a natively integrated [Omi](https://www.omi.me/) speech companion.
 
-Adapted the original version which performed Android transcription, **this cipioh-edition rewrite fundamentally redesigns the architectural flow to precisely emulate the Omi device.** The watch now generates native 16kbps Opus chunks, seamlessly streams them to the phone companion, and directly constructs Omi-compatible `.bin` archives that are pushed natively into Omi's `/v2/sync-local-files` cloud API for state-of-the-art server-side transcription and intelligence.
+The watch continuously monitors audio using a native WebRTC VAD engine, Opus-encodes detected speech, and streams it to the official **Omi Android app** via the Wear Data Layer — no standalone companion app required.
 
 <div align="center">
   <img src="https://github.com/user-attachments/assets/e8de0170-4512-4a55-bc84-e5f4a6d9b833" width="250" />
@@ -10,12 +10,7 @@ Adapted the original version which performed Android transcription, **this cipio
   <img src="https://github.com/user-attachments/assets/825d95c0-ba44-47fa-b80b-8b0d1220ca15" width="250" />
 </div>
 
-## Quick Install (Pre-compiled Releases)
-If you do not want to compile the code in Android Studio, you can natively download the fully packaged APK files directly from the `/releases` folder in this repository! 
-
-There are precisely two files. Both are required for the framework to function smoothly:
-1. `Omi4wOS_Wear_v1.0.apk` -> Install directly onto your **Watch** (Wear OS) using ADB.
-2. `Omi4wOS_Mobile_v1.0.apk` -> Install directly onto your **Android Phone** so you can securely plug in your private API tokens natively.
+> **⚠️ Deprecation Notice:** The standalone mobile companion app (`Omi4wOS_Mobile`) has been deprecated. WearOS audio is now routed directly into the official Omi Android app via a [WearOS AudioSource integration](https://github.com/neurocis/omi/tree/feature/wearos-audio-source). See [Omi App Integration](#omi-app-integration) below.
 
 ## Architecture
 
@@ -31,17 +26,19 @@ There are precisely two files. Both are required for the framework to function s
 │       ↓                              │
 │  BLE Batch Blast (on phrase end)     │
 └──────────────────────────────────────┘
-              ↓  BLE/WiFi (Native Opus Streams)
+              ↓  Wear Data Layer (Native Opus Streams)
 ┌──────────────────────────────────────┐
-│          Phone Companion             │
+│       Omi Android App (Flutter)      │
 │                                      │
-│  WearableListener / Direct Receivers │
+│  WearOsListenerService (Kotlin)      │
 │       ↓                              │
-│  Construct Omi (.bin) archive        │
+│  WearOsAudioBridge (EventChannel)    │
 │       ↓                              │
-│  Omi Cloud Core (/sync-local-files)  │
+│  WearOsSource (AudioSource)          │
 │       ↓                              │
-│  Local SQLite Cache (Upload History) │
+│  WAL + WebSocket Transcription       │
+│       ↓                              │
+│  Omi Cloud (Real-time + Batch Sync)  │
 └──────────────────────────────────────┘
 ```
 
@@ -50,53 +47,74 @@ There are precisely two files. Both are required for the framework to function s
 | Module    | Description                                      |
 |-----------|--------------------------------------------------|
 | `:shared` | Common data models, constants, Data Layer paths  |
-| `:wear`   | WearOS watch app — native AudioRecord, WebRTC GMM detection, and batch opus compression |
-| `:mobile` | Phone companion — Bluetooth aggregator, `.bin` compiler, and Firebase token auto-refresh |
+| `:wear`   | WearOS watch app — native AudioRecord, WebRTC GMM detection, and batch Opus compression |
 
 ## Tech Stack
 
 | Component         | Technology                        |
 |-------------------|-----------------------------------|
 | Language          | Kotlin                            |
-| UI (Watch/Phone)  | Jetpack Compose + Material3       |
-| ML Inference      | Native WebRTC C++ Gaussian Mixture|
+| UI (Watch)        | Jetpack Compose + Material3       |
+| Voice Detection   | Native WebRTC C++ Gaussian Mixture|
 | Audio Encoding    | Opus via Android MediaCodec 16kbps|
-| Cloud Upload      | Multipart POST v2/sync-local-files|
-| Authentication    | Omi Firebase IndexedDB tokens     |
+| Data Transport    | Wear Data Layer (MessageClient)   |
 
 ## Prerequisites
 
 - Android Studio Hedgehog (2023.1.1)+
 - JDK 17, Android SDK 34
 - A WearOS watch (Android 11+)
-- An Android phone (Android 9+)
+- The [Omi Android app](https://github.com/neurocis/omi/tree/feature/wearos-audio-source) with WearOS integration
 
-## Configuration & Cloud Setup
+## Installation
 
-To interface perfectly with Omi Cloud natively, this system securely routes through Omi's Firebase Backend. You have to provide your device with your session tokens extracted from your browser.
+### Build from source
 
-1. Open exactly **[app.omi.me](https://app.omi.me)** in Chrome and sign in to your dashboard.
-2. Open Chrome Developer Tools (`F12` or `Cmd+Option+I`)
-3. **Grab the ID Token:** Navigate to the `Network` tab, reload the page, click any request, look at the Request Headers, and copy the long string after `Authorization: Bearer `.
-4. **Grab the Refresh Token & API Key:** Navigate to the `Application` tab. Open `IndexedDB` → `firebaseLocalStorageDb`. Copy the `refreshToken` from your user block. Also grab the `AIza...` Web API key from any network request URL parameter.
-5. Paste these into your **omi4wOS Companion Settings UI**. The app will natively auto-renew your token forever!
+```bash
+git clone https://github.com/neurocis/omi4wearos.git
+cd omi4wearos
+./gradlew assembleDebug
+```
+
+The watch APK will be at `wear/build/outputs/apk/debug/wear-debug.apk`.
+
+### Install on watch via ADB
+
+```bash
+# Connect watch via Wi-Fi debugging
+adb pair <WATCH_IP>:<PORT>      # Use pairing code from watch
+adb connect <WATCH_IP>:5555
+
+# Install
+adb install wear-debug.apk
+```
+
+## Omi App Integration
+
+The WearOS watch audio is now received directly by the official Omi Android app through a minimal integration:
+
+| Component | Description |
+|-----------|-------------|
+| `WearOsListenerService.kt` | Native WearableListenerService receiving audio via Data Layer |
+| `WearOsAudioBridge.kt` | EventChannel/MethodChannel bridge from native Kotlin to Flutter |
+| `wearos_source.dart` | Flutter AudioSource implementation for WearOS Opus audio |
+| `wearos_service.dart` | Flutter singleton managing WearOS connection and audio streams |
+
+See the integration PR: [neurocis/omi#feature/wearos-audio-source](https://github.com/neurocis/omi/tree/feature/wearos-audio-source)
 
 ## How It Works
 
 1. **Watch**: Continuously monitors audio by routing microphone polling buffers into the DSP every `960ms`, ensuring the OS CPU can sleep between reads.
 2. **WebRTC VAD**: A native C++ WebRTC Engine running in a background process evaluates the audio buffer for voice activity.
 3. **Local Caching**: Audio containing voice activity is Opus-encoded and immediately serialized to the watch's internal filesystem. This ensures no data is lost if the watch is away from the phone.
-4. **Data Transmission**: Once a sentence concludes, the watch evaluates Bluetooth connectivity. If connected, it batch-transmits all pending payloads across the Wear Data Layer. If disconnected, files are securely retained until a background worker syncs them upon reconnection.
-5. **Phone**: The companion app listens on the Data Layer, assembling the received Opus payloads into an `.bin` archive.
-6. **Cloud Upload**: The phone pushes the compiled `.bin` archive into the Omi Cloud using standard Firebase Authentication tokens.
+4. **Data Transmission**: Once a sentence concludes, the watch evaluates Bluetooth connectivity. If connected, it batch-transmits all pending payloads across the Wear Data Layer to the Omi app. If disconnected, files are securely retained until a background worker syncs them upon reconnection.
+5. **Omi App**: The Omi app receives the audio through its `WearOsAudioSource`, routing it through the existing WAL + WebSocket transcription pipeline — identical to how BLE Omi devices and the phone mic are handled.
 
-## Key Upgrades from Original Base
+## Key Features
 
-- **Direct Cloud Integration:** Removed Android SpeechRecognizer, assembling standard Limitless-compatible `.bin` archives that upload directly to the `/v2/sync-local-files` endpoint.
-- **WebRTC VAD Integration:** Replaced the 5MB TensorFlow Lite `YAMNet` framework with native Chromium WebRTC Gaussian Mixture algorithms, drastically reducing battery consumption and memory footprint.
-- **BLE Batch Transfer:** Changed the transmission behavior from streaming every second to batch-transmitting the completed payload at the end of a phrase to reduce radio activity.
-- **Store-and-Forward Caching Engine:** Includes a local disk-caching mechanism (`ChunkRepository`). If Bluetooth connection drops, the watch saves up to 500MB of Opus audio to disk. A background worker syncs the missed files chronologically upon reconnection.
-- **Duplicate Audio Prevention**: Companion dual-listeners track immutable Chunk Index IDs to drop stuttering or duplicated chunks in bad connections.
-- **Dynamic Conversational Hysteresis**: Natively switches WebRTC constraints between a strict 3.8-second environmental noise wall (Idle Mode) to an aggressive 0.9-second word-catcher (Active Conversation logic), providing flawless false-positive prevention without sacrificing short dialog responses.
-- **Amplified Pre-roll Windows**: Buffers 4.0s of audio natively backwards through RAM prior to speech detection to effortlessly prevent sentence cutoff when overcoming the strict Idle Mode boundary walls.
-- **Background Upload Retry**: Failed `.bin` uploads are cached natively in a local Room database and re-attempted on next internet connection.
+- **Direct Omi Integration:** Audio flows directly into the Omi app's existing pipeline — no standalone companion required.
+- **WebRTC VAD:** Native Chromium WebRTC Gaussian Mixture algorithms for efficient voice activity detection with minimal battery impact.
+- **BLE Batch Transfer:** Transmits completed phrases at segment end instead of streaming per-second, reducing radio activity.
+- **Store-and-Forward Caching:** Local disk-caching mechanism (`ChunkRepository`) saves up to 500MB of Opus audio when Bluetooth drops. Background worker syncs on reconnection.
+- **Dynamic Conversational Hysteresis:** Switches between strict 3.8s environmental noise wall (Idle) and aggressive 0.9s word-catcher (Active Conversation) for false-positive prevention without sacrificing responsiveness.
+- **Amplified Pre-roll Windows:** Buffers 4.0s of audio backwards through RAM prior to speech detection to prevent sentence cutoff.
