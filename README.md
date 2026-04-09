@@ -1,120 +1,181 @@
-# omi4wearOS — WearOS Watch Module for Omi
+# omi4wearOS
 
-A WearOS watch app that transforms your smartwatch into a natively integrated [Omi](https://www.omi.me/) speech companion.
-
-The watch continuously monitors audio using a native WebRTC VAD engine, Opus-encodes detected speech, and streams it to the official **Omi Android app** via the Wear Data Layer — no standalone companion app required.
+A WearOS app that transforms your smartwatch into a seamless [Omi](https://www.omi.me/) speech companion — capturing, classifying, and streaming speech directly into the Omi ecosystem.
 
 <div align="center">
-  <img src="https://github.com/user-attachments/assets/e8de0170-4512-4a55-bc84-e5f4a6d9b833" width="250" />
-  <img src="https://github.com/user-attachments/assets/096cb612-54f4-4a26-b7c9-17a58bdb2d81" width="250" />
   <img src="https://github.com/user-attachments/assets/825d95c0-ba44-47fa-b80b-8b0d1220ca15" width="250" />
 </div>
 
-> **⚠️ Deprecation Notice:** The standalone mobile companion app (`Omi4wOS_Mobile`) has been deprecated. WearOS audio is now routed directly into the official Omi Android app via a [WearOS AudioSource integration](https://github.com/neurocis/omi/tree/feature/wearos-audio-source). See [Omi App Integration](#omi-app-integration) below.
+## Overview
+
+The watch runs a lightweight foreground service that continuously monitors ambient audio through a native **WebRTC VAD** (Voice Activity Detection) engine. When speech is detected, it is Opus-encoded on-device and streamed over the **Wear Data Layer** directly to the official **Omi Android app**, which handles transcription, memory creation, and cloud sync — no separate companion app needed.
+
+> **📱 Previous versions** shipped with a standalone Android companion app (`Omi4wOS_Mobile`). This has been **deprecated** in favor of direct integration into the Omi app itself via a [WearOS AudioSource plugin](https://github.com/neurocis/omi/tree/feature/wearos-audio-source), providing a cleaner, single-app experience on the phone.
+
+---
 
 ## Architecture
 
 ```
-┌──────────────────────────────────────┐
-│            WearOS Watch              │
-│                                      │
-│  AudioRecord  (16kHz PCM16 mono)     │
-│       ↓                              │
-│  Native WebRTC VAD (0.96s buffer)    │
-│       ↓                              │
-│  Linear Buffer + Opus Encoder API    │
-│       ↓                              │
-│  BLE Batch Blast (on phrase end)     │
-└──────────────────────────────────────┘
-              ↓  Wear Data Layer (Native Opus Streams)
-┌──────────────────────────────────────┐
-│       Omi Android App (Flutter)      │
-│                                      │
-│  WearOsListenerService (Kotlin)      │
-│       ↓                              │
-│  WearOsAudioBridge (EventChannel)    │
-│       ↓                              │
-│  WearOsSource (AudioSource)          │
-│       ↓                              │
-│  WAL + WebSocket Transcription       │
-│       ↓                              │
-│  Omi Cloud (Real-time + Batch Sync)  │
-└──────────────────────────────────────┘
+┌───────────────────────────────────────────┐
+│              WearOS Watch                 │
+│                                           │
+│  AudioRecord (16 kHz · PCM16 · mono)      │
+│       ↓                                   │
+│  30s Circular Buffer (480K samples RAM)   │
+│       ↓                                   │
+│  WebRTC VAD  (960 ms evaluation windows)  │
+│       ↓                                   │
+│  Dynamic Hysteresis State Machine         │
+│    IDLE  → 3.0 s gate · 4-frame onset     │
+│    ACTIVE → 0.5 s gate · 1-frame onset    │
+│       ↓                                   │
+│  4.0 s Pre-roll + 1.5 s Post-roll         │
+│       ↓                                   │
+│  Opus Encoder (MediaCodec · 24 kbps)      │
+│       ↓                                   │
+│  Store-and-Forward Cache (≤ 500 MB disk)  │
+│       ↓                                   │
+│  Batch Blast via Wear Data Layer          │
+└───────────────────────────────────────────┘
+               ↓  MessageClient (binary Opus chunks)
+┌───────────────────────────────────────────┐
+│         Omi Android App (Flutter)         │
+│                                           │
+│  WearOsListenerService  (Kotlin native)   │
+│       ↓                                   │
+│  WearOsAudioBridge  (EventChannel)        │
+│       ↓                                   │
+│  WearOsSource  (AudioSource interface)    │
+│       ↓                                   │
+│  Existing Omi Pipeline:                   │
+│    • WAL (offline cache + batch sync)     │
+│    • WebSocket → wss://api.omi.me/v4/listen│
+│    • Real-time transcription + memories   │
+└───────────────────────────────────────────┘
 ```
 
-## Modules
+## Quick Install
 
-| Module    | Description                                      |
-|-----------|--------------------------------------------------|
-| `:shared` | Common data models, constants, Data Layer paths  |
-| `:wear`   | WearOS watch app — native AudioRecord, WebRTC GMM detection, and batch Opus compression |
+A pre-built watch APK is available in [`/releases`](releases/):
 
-## Tech Stack
+| File | Target | Install |
+|------|--------|---------|
+| `Omi4wOS_Wear_v1.0.apk` | WearOS watch | `adb install Omi4wOS_Wear_v1.0.apk` |
 
-| Component         | Technology                        |
-|-------------------|-----------------------------------|
-| Language          | Kotlin                            |
-| UI (Watch)        | Jetpack Compose + Material3       |
-| Voice Detection   | Native WebRTC C++ Gaussian Mixture|
-| Audio Encoding    | Opus via Android MediaCodec 16kbps|
-| Data Transport    | Wear Data Layer (MessageClient)   |
+You also need the **Omi Android app** with WearOS support on your phone — see [Omi App Integration](#omi-app-integration) below.
 
-## Prerequisites
+### Install watch APK via ADB
 
-- Android Studio Hedgehog (2023.1.1)+
-- JDK 17, Android SDK 34
-- A WearOS watch (Android 11+)
-- The [Omi Android app](https://github.com/neurocis/omi/tree/feature/wearos-audio-source) with WearOS integration
+```bash
+# Enable Developer Options on watch:
+#   Settings → System → About → tap Build Number 7 times
+#   Settings → Developer options → enable ADB debugging + Wireless debugging
 
-## Installation
+# Pair (one-time)
+adb pair <WATCH_IP>:<PAIR_PORT>    # enter pairing code shown on watch
+
+# Connect
+adb connect <WATCH_IP>:5555
+
+# Install
+adb install releases/Omi4wOS_Wear_v1.0.apk
+```
 
 ### Build from source
 
 ```bash
-git clone https://github.com/neurocis/omi4wearos.git
-cd omi4wearos
+git clone https://github.com/neurocis/omi4WearOS.git
+cd omi4WearOS
 ./gradlew assembleDebug
+# Output: wear/build/outputs/apk/debug/wear-debug.apk
 ```
 
-The watch APK will be at `wear/build/outputs/apk/debug/wear-debug.apk`.
+Requires JDK 17 and Android SDK 34.
 
-### Install on watch via ADB
-
-```bash
-# Connect watch via Wi-Fi debugging
-adb pair <WATCH_IP>:<PORT>      # Use pairing code from watch
-adb connect <WATCH_IP>:5555
-
-# Install
-adb install wear-debug.apk
-```
+---
 
 ## Omi App Integration
 
-The WearOS watch audio is now received directly by the official Omi Android app through a minimal integration:
+The watch streams audio to the official Omi Android app through a minimal, additive integration — **4 new files, ~480 lines of code, zero existing code modified:**
 
-| Component | Description |
-|-----------|-------------|
-| `WearOsListenerService.kt` | Native WearableListenerService receiving audio via Data Layer |
-| `WearOsAudioBridge.kt` | EventChannel/MethodChannel bridge from native Kotlin to Flutter |
-| `wearos_source.dart` | Flutter AudioSource implementation for WearOS Opus audio |
-| `wearos_service.dart` | Flutter singleton managing WearOS connection and audio streams |
+| File | Layer | Purpose |
+|------|-------|---------|
+| `WearOsListenerService.kt` | Android native | Receives binary audio chunks via Wear Data Layer `MessageClient` |
+| `WearOsAudioBridge.kt` | Android native | Singleton `EventChannel` + `MethodChannel` bridge to Flutter |
+| `wearos_source.dart` | Flutter | `AudioSource` implementation — converts Opus payloads into WAL frames |
+| `wearos_service.dart` | Flutter | Singleton service managing connection state and audio streams |
 
-See the integration PR: [neurocis/omi#feature/wearos-audio-source](https://github.com/neurocis/omi/tree/feature/wearos-audio-source)
+The integration plugs into the Omi app's existing `CaptureProvider` pipeline, so watch audio is processed identically to BLE Omi hardware devices and the phone microphone — including WAL caching, WebSocket real-time transcription, and memory creation.
+
+**Branch:** [`feature/wearos-audio-source`](https://github.com/neurocis/omi/tree/feature/wearos-audio-source)
+
+---
 
 ## How It Works
 
-1. **Watch**: Continuously monitors audio by routing microphone polling buffers into the DSP every `960ms`, ensuring the OS CPU can sleep between reads.
-2. **WebRTC VAD**: A native C++ WebRTC Engine running in a background process evaluates the audio buffer for voice activity.
-3. **Local Caching**: Audio containing voice activity is Opus-encoded and immediately serialized to the watch's internal filesystem. This ensures no data is lost if the watch is away from the phone.
-4. **Data Transmission**: Once a sentence concludes, the watch evaluates Bluetooth connectivity. If connected, it batch-transmits all pending payloads across the Wear Data Layer to the Omi app. If disconnected, files are securely retained until a background worker syncs them upon reconnection.
-5. **Omi App**: The Omi app receives the audio through its `WearOsAudioSource`, routing it through the existing WAL + WebSocket transcription pipeline — identical to how BLE Omi devices and the phone mic are handled.
+1. **Continuous Monitoring** — A foreground service polls the microphone in `960 ms` evaluation windows (48 × 20 ms WebRTC frames), allowing the CPU to sleep between reads for minimal battery drain.
 
-## Key Features
+2. **Voice Activity Detection** — Each window is evaluated by a native C++ WebRTC Gaussian Mixture Model running in `VERY_AGGRESSIVE` mode. A 30-second circular buffer retains recent audio in RAM.
 
-- **Direct Omi Integration:** Audio flows directly into the Omi app's existing pipeline — no standalone companion required.
-- **WebRTC VAD:** Native Chromium WebRTC Gaussian Mixture algorithms for efficient voice activity detection with minimal battery impact.
-- **BLE Batch Transfer:** Transmits completed phrases at segment end instead of streaming per-second, reducing radio activity.
-- **Store-and-Forward Caching:** Local disk-caching mechanism (`ChunkRepository`) saves up to 500MB of Opus audio when Bluetooth drops. Background worker syncs on reconnection.
-- **Dynamic Conversational Hysteresis:** Switches between strict 3.8s environmental noise wall (Idle) and aggressive 0.9s word-catcher (Active Conversation) for false-positive prevention without sacrificing responsiveness.
-- **Amplified Pre-roll Windows:** Buffers 4.0s of audio backwards through RAM prior to speech detection to prevent sentence cutoff.
+3. **Dynamic Hysteresis** — A two-state machine manages speech boundaries:
+   - **IDLE mode** — Requires 3.0 s of sustained speech across 4 consecutive positive frames to trigger (rejects traffic, TV, background noise).
+   - **ACTIVE mode** — Drops to 0.5 s / 1 frame for responsive conversational capture. Reverts to IDLE after 60 s of silence.
+
+4. **Pre-roll & Encoding** — When speech is confirmed, 4.0 s of pre-roll audio is extracted from the circular buffer to capture the beginning of the utterance. The segment is Opus-encoded at 24 kbps via Android `MediaCodec`.
+
+5. **Store-and-Forward** — Encoded chunks are written to the watch's internal storage (`ChunkRepository`, capped at 500 MB). If Bluetooth is connected, chunks are batch-transmitted at phrase boundaries via the Wear `MessageClient`. If disconnected, a background worker syncs them chronologically upon reconnection.
+
+6. **Omi Processing** — The Omi app receives chunks through its `WearOsAudioSource`, feeding them into the standard WAL + WebSocket transcription pipeline for real-time processing and memory creation.
+
+---
+
+## Modules
+
+| Module | Description | Key Files |
+|--------|-------------|-----------|
+| `:wear` | WearOS watch app | `AudioCaptureService.kt` (404 lines) · `SpeechClassifier.kt` · `OpusEncoder.kt` · `CircularAudioBuffer.kt` · `ChunkRepository.kt` · `DataLayerSender.kt` |
+| `:shared` | Common data models | `AudioChunk.kt` · `Constants.kt` · `DataLayerPaths.kt` |
+
+## Tech Stack
+
+| Component | Technology |
+|-----------|------------|
+| Language | Kotlin |
+| UI | Jetpack Compose · Wear Material |
+| Voice Detection | WebRTC C++ GMM (`android-vad:webrtc:2.0.7`) |
+| Audio Encoding | Opus via Android MediaCodec (24 kbps · 20 ms frames) |
+| Data Transport | Wear Data Layer `MessageClient` |
+| Local Caching | File-based store-and-forward (`ChunkRepository`) |
+| Min SDK | 30 (Android 11 / WearOS 3) |
+| Target SDK | 34 |
+
+## Key Technical Parameters
+
+| Parameter | Value |
+|-----------|-------|
+| Sample rate | 16 kHz mono PCM16 |
+| VAD evaluation window | 960 ms (48 × 20 ms frames) |
+| Circular buffer | 30 s (480,000 samples) |
+| Pre-roll | 4.0 s |
+| Post-roll | 1.5 s |
+| Idle gate | 3.0 s sustained speech |
+| Active gate | 0.5 s sustained speech |
+| Conversation timeout | 60 s → revert to IDLE |
+| Opus bitrate | 24 kbps |
+| Opus frame size | 20 ms (320 samples) |
+| Max cache | 500 MB on-watch |
+| Max segment length | 60 s |
+| Data Layer path | `/audio/speech` |
+
+---
+
+## Prerequisites
+
+- A **WearOS watch** running Android 11+ (Wear OS 3+)
+- An **Android phone** with the [Omi app](https://github.com/neurocis/omi/tree/feature/wearos-audio-source) (WearOS-enabled build)
+- For building: Android Studio Hedgehog+, JDK 17, Android SDK 34
+
+## License
+
+See [LICENSE](LICENSE) for details.
