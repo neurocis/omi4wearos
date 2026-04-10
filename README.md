@@ -5,9 +5,10 @@ A multi-module Android/Kotlin project that transforms your WearOS watch into an 
 Adapted the original version which performed Android transcription, **this cipioh-edition rewrite fundamentally redesigns the architectural flow to precisely emulate the Omi device.** The watch now generates native 16kbps Opus chunks, seamlessly streams them to the phone companion, and directly constructs Omi-compatible `.bin` archives that are pushed natively into Omi's `/v2/sync-local-files` cloud API for state-of-the-art server-side transcription and intelligence.
 
 <div align="center">
-  <img src="https://github.com/user-attachments/assets/e8de0170-4512-4a55-bc84-e5f4a6d9b833" width="250" />
-  <img src="https://github.com/user-attachments/assets/096cb612-54f4-4a26-b7c9-17a58bdb2d81" width="250" />
-  <img src="https://github.com/user-attachments/assets/825d95c0-ba44-47fa-b80b-8b0d1220ca15" width="250" />
+  <img src="https://github.com/user-attachments/assets/7a3323c4-dd6b-4c02-98aa-8517d2c4012a" width="250" />
+  <img src="https://github.com/user-attachments/assets/b2f2af27-98ca-4cce-acf4-c0a4c465bcc1" width="250" />
+  <img src="https://github.com/user-attachments/assets/b3d8a782-19c5-48a3-8126-73723b2e0fd2" width="250" />
+  <img src="https://github.com/user-attachments/assets/c5e20655-373e-4ad5-adcb-35589184247e" width="250" />
 </div>
 
 ## Quick Install (Pre-compiled Releases)
@@ -19,8 +20,6 @@ The phone companion APK is required for both watch builds. Pick the APKs that ma
 |---|---|
 | `Omi4wOS_Mobile_v1.8.apk` | **Recommended phone build.** Logo title, redesigned watch card, all v1.7 fixes included. Install onto your **Android Phone**. |
 | `Omi4wOS_Wear_v1.8.apk` | **Recommended watch build.** Same as v1.7 wear — no watch-side changes in v1.8. Install via ADB onto your **Watch**. |
-| `Omi4wOS_Mobile_v1.7.apk` | Fixes batch sync fragmentation race condition and stale card UI. *(archive/)* |
-| `Omi4wOS_Wear_v1.7.apk` | Fixes natural-pause fragmentation — silence threshold raised to ~5.8s so breaths don't end a segment. *(archive/)* |
 
 Older builds are in `releases/archive/`. See [CHANGELOG](releases/CHANGELOG.md) for full history.
 
