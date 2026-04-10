@@ -17,17 +17,12 @@ The phone companion APK is required for both watch builds. Pick the APKs that ma
 
 | File | Description |
 |---|---|
-| `Omi4wOS_Mobile_v1.5.apk` | **Recommended phone build.** Batch uploads combined into one multipart POST per session — fixes conversation fragmentation. Install onto your **Android Phone**. |
-| `Omi4wOS_Wear_v1.5.apk` | **Recommended watch build.** Sends SYNC_END signal so phone knows when to flush its batch buffer. Install via ADB onto your **Watch**. |
-| `Omi4wOS_Mobile_v1.4.apk` | Phone build with clock-aligned sync intervals and Realtime/Batch toggle. |
-| `Omi4wOS_Wear_v1.4.apk` | Watch build with clock-aligned sync and START_STICKY crash fix. |
-| `Omi4wOS_Mobile_v1.3.apk` | Phone build with Realtime/Batch toggle and configurable interval (no clock-aligned options). |
-| `Omi4wOS_Wear_v1.3.apk` | Watch build with stream mode support (no clock-aligned sync, no crash fix). |
-| `Omi4wOS_Mobile_v1.2.apk` | Phone build with upload tracking + retry, live watch status. |
-| `Omi4wOS_Wear_v1.2_Silero.apk` | Watch build with Silero LSTM VAD, force-sync/start/stop support. |
-| `Omi4wOS_Wear_v1.1_Silero.apk` | Silero VAD with 1.5s pre-roll (sometimes clips first words). |
-| `Omi4wOS_Wear_v1.0.apk` | Original watch build with WebRTC GMM VAD. Smaller (30MB) but higher false positive rate. |
-| `Omi4wOS_Mobile_v1.0.apk` | Original phone build. Works but lacks upload history and status UI. |
+| `Omi4wOS_Mobile_v1.8.apk` | **Recommended phone build.** Logo title, redesigned watch card, all v1.7 fixes included. Install onto your **Android Phone**. |
+| `Omi4wOS_Wear_v1.8.apk` | **Recommended watch build.** Same as v1.7 wear — no watch-side changes in v1.8. Install via ADB onto your **Watch**. |
+| `Omi4wOS_Mobile_v1.7.apk` | Fixes batch sync fragmentation race condition and stale card UI. *(archive/)* |
+| `Omi4wOS_Wear_v1.7.apk` | Fixes natural-pause fragmentation — silence threshold raised to ~5.8s so breaths don't end a segment. *(archive/)* |
+
+Older builds are in `releases/archive/`. See [CHANGELOG](releases/CHANGELOG.md) for full history.
 
 ## Architecture
 
@@ -104,6 +99,17 @@ To interface perfectly with Omi Cloud natively, this system securely routes thro
 5. **Data Transmission**: Once a sentence concludes, the watch evaluates Bluetooth connectivity. In **Realtime Stream** mode, the watch immediately transmits the completed segment as soon as it ends. In **Batch Stream** mode, the watch accumulates segments and syncs on a schedule you set from the phone companion. Available intervals: `:00` (once per hour, at the top of the hour), `:30` (twice per hour, at :00 and :30), or fixed durations of 5, 10, 15, 30, 60, 90, or 120 minutes. The `:00` and `:30` options are clock-aligned — the watch checks whether the most recently passed boundary (:00 or :30) has not yet been synced, so syncs happen at predictable wall-clock times regardless of when the app started. Fixed-duration intervals count down from the last sync. If disconnected, files are securely retained until a background worker syncs them upon reconnection.
 6. **Phone**: The companion app listens on the Data Layer, assembling the received Opus payloads into an `.bin` archive.
 7. **Cloud Upload**: The phone pushes the compiled `.bin` archive into the Omi Cloud using standard Firebase Authentication tokens.
+
+## What's New in v1.8
+
+- **Logo title**: The omi4wearOS logo image replaces the plain text title on the phone home screen.
+- **Redesigned watch card**: "Watch Connected / Disconnected" status is now a clear title at the top of the card. The watch icon (80dp) and Start/Stop button share a clean row below it.
+
+## What's New in v1.7
+
+- **Batch sync race condition fixed**: Audio chunks on the `/audio/speech/` Data Layer path can arrive before `CMD_SYNC_START` on `/audio/control/` because the Wear Data Layer does not guarantee cross-path message ordering. Previously those early-arriving segments fell through to the realtime upload path and each became a separate Omi conversation. Now all batch-mode segments are buffered regardless of whether the syncId has arrived yet, and any that raced ahead are absorbed into the correct session at flush time.
+- **Natural pause threshold raised**: Silence offset raised from 3 → 6 consecutive VAD windows (≈2.9s → 5.8s). Breath pauses and mid-sentence thinking pauses no longer end the current segment prematurely.
+- **Batch flush delay**: Increased from 500ms → 2000ms so the last in-flight segment always lands in the buffer before it is flushed.
 
 ## What's New in v1.5
 

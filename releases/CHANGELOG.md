@@ -1,5 +1,31 @@
 # Changelog
 
+## v1.8 — 2026-04-10
+
+### Mobile (`Omi4wOS_Mobile_v1.8.apk`)
+
+**Changed**
+- Home screen title is now the omi4wearOS logo image instead of plain text.
+- Watch connection card redesigned: "Watch Connected / Disconnected" status moved to the top of the card as a title; icon resized to 80dp; icon and Start/Stop button share a clean row below the title.
+
+---
+
+## v1.7 — 2026-04-10
+
+### Mobile (`Omi4wOS_Mobile_v1.7.apk`)
+
+**Fixed**
+- Batch sync fragmentation (race condition): audio chunks on the `/audio/speech/` Data Layer path can arrive and be fully assembled before the `CMD_SYNC_START` control message on `/audio/control/` is processed, because the Wear Data Layer does not guarantee cross-path ordering. When this happened, segments received with an empty syncId fell through to the realtime upload path and each became its own independent Omi conversation. Now all segments in batch mode are buffered regardless of whether the syncId has arrived yet; segments that raced ahead are absorbed into the correct syncId at flush time.
+- Batch flush delay increased from 500ms → 2000ms to give in-flight segment coroutines more time to complete before the buffer is snapshotted.
+- Home screen title trimmed to "omi4wOS", watch card icon updated to the custom omi4wearOS asset, misleading (non-realtime) battery level removed from the card.
+
+### Wear (`Omi4wOS_Wear_v1.7.apk`)
+
+**Fixed**
+- Natural speech pauses (breaths, mid-sentence thinking pauses) were ending the current recording segment prematurely. The silence offset threshold was raised from 3 → 6 consecutive 960ms VAD windows (≈2.9s → 5.8s), giving the speaker time to breathe or pause without fragmenting a single conversation into many short clips.
+
+---
+
 ## v1.6 — 2026-04-10
 
 ### Mobile (`Omi4wOS_Mobile_v1.6.apk`)
