@@ -32,7 +32,7 @@ data class HomeUiState(
     val uploadFailures: Int = 0,
     val recentSyncs: List<SyncSummary> = emptyList(),
     val streamMode: String = Constants.STREAM_MODE_BATCH,
-    val batchIntervalMinutes: Int = Constants.DEFAULT_BATCH_INTERVAL_MINUTES
+    val batchInterval: String = Constants.DEFAULT_BATCH_INTERVAL
 )
 
 class HomeViewModel(application: Application) : AndroidViewModel(application) {
@@ -122,8 +122,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         omiConfig.observeConfig()
             .onEach { config ->
                 _uiState.value = _uiState.value.copy(
-                    streamMode = config.streamMode,
-                    batchIntervalMinutes = config.batchIntervalMinutes
+                    streamMode    = config.streamMode,
+                    batchInterval = config.batchInterval
                 )
             }
             .launchIn(viewModelScope)
@@ -176,17 +176,17 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             val cmd = if (mode == Constants.STREAM_MODE_REALTIME) {
                 "${DataLayerPaths.CMD_SET_STREAM_MODE}:$mode"
             } else {
-                "${DataLayerPaths.CMD_SET_STREAM_MODE}:$mode:${config.batchIntervalMinutes}"
+                "${DataLayerPaths.CMD_SET_STREAM_MODE}:$mode:${config.batchInterval}"
             }
             sendWatchCommand(cmd)
         }
     }
 
-    fun setBatchIntervalMinutes(minutes: Int) {
+    fun setBatchInterval(interval: String) {
         viewModelScope.launch {
             val config = omiConfig.getConfig()
-            omiConfig.saveConfig(config.copy(batchIntervalMinutes = minutes))
-            sendWatchCommand("${DataLayerPaths.CMD_SET_STREAM_MODE}:${Constants.STREAM_MODE_BATCH}:$minutes")
+            omiConfig.saveConfig(config.copy(batchInterval = interval))
+            sendWatchCommand("${DataLayerPaths.CMD_SET_STREAM_MODE}:${Constants.STREAM_MODE_BATCH}:$interval")
         }
     }
 

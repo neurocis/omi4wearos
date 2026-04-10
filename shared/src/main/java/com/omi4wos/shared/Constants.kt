@@ -44,8 +44,14 @@ object Constants {
     const val STREAM_MODE_REALTIME          = "realtime"
     const val STREAM_MODE_BATCH             = "batch"
     const val PREF_STREAM_MODE              = "stream_mode"
-    const val PREF_BATCH_INTERVAL_MINUTES   = "batch_interval_minutes"
-    const val DEFAULT_BATCH_INTERVAL_MINUTES = 60
+
+    // Batch interval — stored as a String to support both minute counts and clock-aligned modes.
+    // Minute-based values: "5", "10", "15", "30", "60", "90", "120"
+    // Clock-aligned values: ":00" (top of every hour) | ":30" (every :00 and :30)
+    const val PREF_BATCH_INTERVAL           = "batch_interval"
+    const val DEFAULT_BATCH_INTERVAL        = "60"
+    const val BATCH_CLOCK_HOUR              = ":00"  // sync once per hour at xx:00
+    const val BATCH_CLOCK_HALF              = ":30"  // sync twice per hour at xx:00 and xx:30
 
     // Opus encoder parameters
     const val OPUS_BITRATE = 24000 // 24 kbps - good for speech

@@ -78,13 +78,17 @@ class WatchCommandReceiver : WearableListenerService() {
                 if (command.startsWith(DataLayerPaths.CMD_SET_STREAM_MODE + ":")) {
                     val parts = command.split(":")
                     val mode = parts.getOrNull(1) ?: return
-                    val intervalMinutes = parts.getOrNull(2)?.toIntOrNull()
+                    // Rejoin everything from index 2 onward with ":" to reconstruct values
+                    // like ":00" or ":30" that were split by the delimiter.
+                    // e.g. "SET_STREAM_MODE:batch::00".split(":") → ["SET_STREAM_MODE","batch","","00"]
+                    //      parts.drop(2).joinToString(":") → ":00"  ✓
+                    val interval = if (parts.size > 2) parts.drop(2).joinToString(":") else null
                     startService(
                         Intent(this, AudioCaptureService::class.java).apply {
                             action = AudioCaptureService.ACTION_SET_STREAM_MODE
                             putExtra(AudioCaptureService.EXTRA_STREAM_MODE, mode)
-                            if (intervalMinutes != null) {
-                                putExtra(AudioCaptureService.EXTRA_BATCH_INTERVAL_MINUTES, intervalMinutes)
+                            if (interval != null) {
+                                putExtra(AudioCaptureService.EXTRA_BATCH_INTERVAL, interval)
                             }
                         }
                     )
