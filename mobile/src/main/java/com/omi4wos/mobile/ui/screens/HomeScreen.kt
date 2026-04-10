@@ -17,8 +17,8 @@ import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.Sync
-import androidx.compose.material.icons.filled.Watch
-import androidx.compose.material.icons.filled.WatchOff
+import androidx.compose.ui.res.painterResource
+import com.omi4wos.mobile.R
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -60,7 +60,7 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
             .padding(16.dp)
     ) {
         Text(
-            text = "omi4wOS - cipioh version",
+            text = "omi4wOS",
             style = MaterialTheme.typography.headlineMedium,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary
@@ -85,7 +85,7 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
-                    imageVector = if (uiState.watchConnected) Icons.Default.Watch else Icons.Default.WatchOff,
+                    painter = painterResource(R.drawable.ic_launcher_foreground),
                     contentDescription = null,
                     tint = if (uiState.watchConnected) Color(0xFF4CAF50) else Color(0xFF757575),
                     modifier = Modifier.size(32.dp)
@@ -104,13 +104,6 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
                         color = if (uiState.watchConnected && uiState.isReceivingAudio)
                             Color(0xFF4CAF50) else Color.Transparent
                     )
-                    if (uiState.watchBatteryLevel >= 0) {
-                        Text(
-                            text = "Battery: ${uiState.watchBatteryLevel}%",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
                 }
                 if (uiState.watchConnected) {
                     Button(
