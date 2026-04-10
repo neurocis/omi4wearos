@@ -1,5 +1,24 @@
 # Changelog
 
+## v1.6 — 2026-04-10
+
+### Mobile (`Omi4wOS_Mobile_v1.6.apk`)
+
+**Changed**
+- App icon: bezel ring tightened to radius 30 (was 40) and mic rescaled to 1.8× so all artwork sits safely inside the launcher mask's clip boundary on all Android icon shapes.
+
+---
+
+### Wear (`Omi4wOS_Wear_v1.6.apk`)
+
+**Changed**
+- Home screen redesigned around a single circular 72dp toggle button with three visual states: dark-slate (idle), indigo pulse (recording / silence), green pulse (speech detected), deep-red (permission missing). Pulse speed and amplitude are keyed to state — fast and large during speech, slow and subtle while listening.
+- Haptic tick on every recording toggle.
+- Phone-connected indicator (dot + label) replaces the old Chip row.
+- App icon: same safe-zone fix as mobile.
+
+---
+
 ## v1.5 — 2026-04-10
 
 ### Mobile (`Omi4wOS_Mobile_v1.5.apk`)
