@@ -7,6 +7,8 @@ Adapted the original version which performed Android transcription, **this cipio
 <div align="center">
   <img src="https://github.com/user-attachments/assets/7a3323c4-dd6b-4c02-98aa-8517d2c4012a" width="250" />
   <img src="https://github.com/user-attachments/assets/b2f2af27-98ca-4cce-acf4-c0a4c465bcc1" width="250" />
+</div>
+<div align="center">
   <img src="https://github.com/user-attachments/assets/b3d8a782-19c5-48a3-8126-73723b2e0fd2" width="250" />
   <img src="https://github.com/user-attachments/assets/c5e20655-373e-4ad5-adcb-35589184247e" width="250" />
 </div>
