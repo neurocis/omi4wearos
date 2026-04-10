@@ -78,55 +78,52 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
                     MaterialTheme.colorScheme.surfaceVariant
             )
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_launcher_foreground),
-                    contentDescription = null,
-                    tint = if (uiState.watchConnected) Color(0xFF4CAF50) else Color(0xFF757575),
-                    modifier = Modifier.size(96.dp)
+            Column(modifier = Modifier.padding(16.dp)) {
+                // Status title at top of card
+                Text(
+                    text = if (uiState.watchConnected) "Watch Connected" else "Watch Disconnected",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
                 )
-                Spacer(modifier = Modifier.width(12.dp))
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.Center
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = if (uiState.watchConnected) "Watch Connected" else "Watch Disconnected",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold
+                    Icon(
+                        painter = painterResource(R.drawable.ic_launcher_foreground),
+                        contentDescription = null,
+                        tint = if (uiState.watchConnected) Color(0xFF4CAF50) else Color(0xFF757575),
+                        modifier = Modifier.size(80.dp)
                     )
-                    // Always reserve space; color hides it when inactive so the card stays the same height
+                    Spacer(modifier = Modifier.width(12.dp))
+                    // Always reserve space; color hides it when inactive so the row height stays stable
                     Text(
                         text = "Receiving audio…",
                         style = MaterialTheme.typography.bodySmall,
                         color = if (uiState.watchConnected && uiState.isReceivingAudio)
-                            Color(0xFF4CAF50) else Color.Transparent
+                            Color(0xFF4CAF50) else Color.Transparent,
+                        modifier = Modifier.weight(1f)
                     )
-                }
-                if (uiState.watchConnected) {
-                    Button(
-                        onClick = {
-                            if (uiState.watchRecordingEnabled) viewModel.stopWatchRecording()
-                            else viewModel.startWatchRecording()
-                        },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (uiState.watchRecordingEnabled)
-                                Color(0xFFB71C1C) else Color(0xFF1B5E20)
-                        ),
-                        modifier = Modifier.padding(start = 8.dp)
-                    ) {
-                        Icon(
-                            imageVector = if (uiState.watchRecordingEnabled) Icons.Default.MicOff else Icons.Default.Mic,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(if (uiState.watchRecordingEnabled) "Stop" else "Start")
+                    if (uiState.watchConnected) {
+                        Button(
+                            onClick = {
+                                if (uiState.watchRecordingEnabled) viewModel.stopWatchRecording()
+                                else viewModel.startWatchRecording()
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (uiState.watchRecordingEnabled)
+                                    Color(0xFFB71C1C) else Color(0xFF1B5E20)
+                            )
+                        ) {
+                            Icon(
+                                imageVector = if (uiState.watchRecordingEnabled) Icons.Default.MicOff else Icons.Default.Mic,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(if (uiState.watchRecordingEnabled) "Stop" else "Start")
+                        }
                     }
                 }
             }
