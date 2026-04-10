@@ -17,8 +17,10 @@ The phone companion APK is required for both watch builds. Pick the APKs that ma
 
 | File | Description |
 |---|---|
-| `Omi4wOS_Mobile_v1.4.apk` | **Recommended phone build.** Realtime/Batch stream mode toggle, clock-aligned sync intervals, configurable batch interval. Install onto your **Android Phone**. |
-| `Omi4wOS_Wear_v1.4.apk` | **Recommended watch build.** Clock-aligned sync, START_STICKY crash fix, respects stream mode from phone. Install via ADB onto your **Watch**. |
+| `Omi4wOS_Mobile_v1.5.apk` | **Recommended phone build.** Batch uploads combined into one multipart POST per session — fixes conversation fragmentation. Install onto your **Android Phone**. |
+| `Omi4wOS_Wear_v1.5.apk` | **Recommended watch build.** Sends SYNC_END signal so phone knows when to flush its batch buffer. Install via ADB onto your **Watch**. |
+| `Omi4wOS_Mobile_v1.4.apk` | Phone build with clock-aligned sync intervals and Realtime/Batch toggle. |
+| `Omi4wOS_Wear_v1.4.apk` | Watch build with clock-aligned sync and START_STICKY crash fix. |
 | `Omi4wOS_Mobile_v1.3.apk` | Phone build with Realtime/Batch toggle and configurable interval (no clock-aligned options). |
 | `Omi4wOS_Wear_v1.3.apk` | Watch build with stream mode support (no clock-aligned sync, no crash fix). |
 | `Omi4wOS_Mobile_v1.2.apk` | Phone build with upload tracking + retry, live watch status. |
@@ -102,6 +104,12 @@ To interface perfectly with Omi Cloud natively, this system securely routes thro
 5. **Data Transmission**: Once a sentence concludes, the watch evaluates Bluetooth connectivity. In **Realtime Stream** mode, the watch immediately transmits the completed segment as soon as it ends. In **Batch Stream** mode, the watch accumulates segments and syncs on a schedule you set from the phone companion. Available intervals: `:00` (once per hour, at the top of the hour), `:30` (twice per hour, at :00 and :30), or fixed durations of 5, 10, 15, 30, 60, 90, or 120 minutes. The `:00` and `:30` options are clock-aligned — the watch checks whether the most recently passed boundary (:00 or :30) has not yet been synced, so syncs happen at predictable wall-clock times regardless of when the app started. Fixed-duration intervals count down from the last sync. If disconnected, files are securely retained until a background worker syncs them upon reconnection.
 6. **Phone**: The companion app listens on the Data Layer, assembling the received Opus payloads into an `.bin` archive.
 7. **Cloud Upload**: The phone pushes the compiled `.bin` archive into the Omi Cloud using standard Firebase Authentication tokens.
+
+## What's New in v1.5
+
+- **Batch Upload Grouping**: Fixed a conversation fragmentation bug where each speech segment in a batch sync was uploaded as an independent Omi job. The Omi backend had no way to link them, so one hour of audio became dozens of separate conversations. Now all segments from a sync session are buffered on the phone and flushed as a **single multipart POST** when the watch signals session end — exactly how the Omi pendant itself uploads.
+- **Temporal Session Splitting**: Within a batch flush, segments separated by more than 5 minutes are recognized as genuinely distinct conversations and sent as separate uploads. Segments within the same continuous session always land in the same Omi conversation.
+- **Watch Session Signaling**: The watch now sends a `CMD_SYNC_END` message after transmitting all pending chunks, giving the phone a reliable trigger to flush its buffer. Previously the phone had no way to know when a sync session was complete.
 
 ## What's New in v1.4
 
