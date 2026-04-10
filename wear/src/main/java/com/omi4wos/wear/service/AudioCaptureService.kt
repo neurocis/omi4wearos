@@ -7,13 +7,16 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.content.pm.ServiceInfo
+import android.os.BatteryManager
 import android.os.IBinder
 import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.omi4wos.shared.AudioChunk
 import com.omi4wos.shared.Constants
+import com.omi4wos.shared.DataLayerPaths
 import com.omi4wos.wear.MainActivity
 import com.omi4wos.wear.R
 import com.omi4wos.wear.audio.AudioRecorder
@@ -35,6 +38,9 @@ import java.util.UUID
 /**
  * Foreground service for continuous audio recording, speech classification,
  * and forwarding speech segments to the phone companion app.
+ *
+ * Audio is written to disk continuously; syncs to phone on an hourly schedule
+ * (or immediately on first connect / reconnect after >1 hour).
  */
 class AudioCaptureService : Service() {
 
@@ -43,6 +49,7 @@ class AudioCaptureService : Service() {
 
         const val ACTION_START = "com.omi4wos.wear.ACTION_START"
         const val ACTION_STOP = "com.omi4wos.wear.ACTION_STOP"
+        const val ACTION_FORCE_SYNC = "com.omi4wos.wear.ACTION_FORCE_SYNC"
 
         // Observable state for UI
         private val _isRecording = MutableStateFlow(false)
@@ -64,6 +71,7 @@ class AudioCaptureService : Service() {
     private lateinit var opusEncoder: OpusEncoder
     private lateinit var dataLayerSender: DataLayerSender
     private lateinit var chunkRepository: ChunkRepository
+    private lateinit var prefs: SharedPreferences
 
     private var wakeLock: PowerManager.WakeLock? = null
 
@@ -75,12 +83,14 @@ class AudioCaptureService : Service() {
     private var chunkIndex = 0
     private var isInSpeechSegment = false
 
-
     // Thresholds for hysteresis
     private val speechOffsetFrames = 3 // Need 3 consecutive silence frames to end (Silero windows ~1.2s each)
 
     // Dynamic Conversation Tracking
     private var lastValidSpeechEndTimeMs: Long = 0L
+
+    // Hourly sync tracking (persisted across service restarts)
+    private var lastSyncTimeMs: Long = 0L
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -93,12 +103,32 @@ class AudioCaptureService : Service() {
         opusEncoder = OpusEncoder()
         dataLayerSender = DataLayerSender(this)
         chunkRepository = ChunkRepository(this)
+        prefs = getSharedPreferences(Constants.PREFS_NAME, Context.MODE_PRIVATE)
+        lastSyncTimeMs = prefs.getLong(Constants.PREF_LAST_SYNC_TIME, 0L)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START -> startCapture()
             ACTION_STOP -> stopCapture()
+            ACTION_FORCE_SYNC -> {
+                val wasRecording = _isRecording.value
+                if (!wasRecording) {
+                    startForeground(
+                        Constants.WEAR_NOTIFICATION_ID,
+                        createNotification("Syncing to phone…"),
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+                    )
+                }
+                serviceScope.launch {
+                    Log.i(TAG, "ACTION_FORCE_SYNC — syncing immediately")
+                    performSync()
+                    if (!wasRecording) {
+                        stopForeground(STOP_FOREGROUND_REMOVE)
+                        stopSelf()
+                    }
+                }
+            }
         }
         return START_STICKY
     }
@@ -125,20 +155,29 @@ class AudioCaptureService : Service() {
 
         // Start audio recording
         audioRecorder.start { samples ->
-            // Called on the recording thread with each buffer of samples
             circularBuffer.write(samples)
         }
 
         _isRecording.value = true
 
-        // Check phone connectivity and setup background synchronizer
+        // Notify phone that recording has started
+        notifyPhoneRecordingState(true)
+
+        // Hourly sync loop: check connectivity every 2 min, sync if ≥1 hour since last sync
         serviceScope.launch {
             while (isActive) {
                 dataLayerSender.checkConnectivity()
                 val connected = dataLayerSender.isConnected
                 _isPhoneConnected.value = connected
+
                 if (connected) {
-                    syncPendingChunks()
+                    val elapsed = System.currentTimeMillis() - lastSyncTimeMs
+                    if (lastSyncTimeMs == 0L || elapsed >= Constants.HOURLY_SYNC_INTERVAL_MS) {
+                        Log.i(TAG, "Hourly sync triggered (${elapsed}ms since last sync)")
+                        performSync()
+                        lastSyncTimeMs = System.currentTimeMillis()
+                        prefs.edit().putLong(Constants.PREF_LAST_SYNC_TIME, lastSyncTimeMs).apply()
+                    }
                 }
                 delay(Constants.CONNECTIVITY_POLL_INTERVAL_MS)
             }
@@ -153,6 +192,8 @@ class AudioCaptureService : Service() {
     private fun stopCapture() {
         Log.i(TAG, "Stopping audio capture")
 
+        // Notify phone that recording has stopped before tearing down the sender
+        notifyPhoneRecordingState(false)
         classificationJob?.cancel()
         classificationJob = null
 
@@ -174,7 +215,7 @@ class AudioCaptureService : Service() {
 
     /**
      * Main classification loop: reads audio windows from the circular buffer,
-     * classifies with WebRTC VAD, and handles speech segment extraction.
+     * classifies with Silero VAD, and handles speech segment extraction.
      * Slows to half-rate after 5 minutes of silence to reduce CPU usage.
      */
     private suspend fun classificationLoop() {
@@ -183,16 +224,13 @@ class AudioCaptureService : Service() {
         var lastSpeechDetectedMs = System.currentTimeMillis()
 
         while (serviceScope.isActive) {
-            // Wait until we have enough samples
             if (circularBuffer.availableSamples() < windowSamples) {
                 delay(50)
                 continue
             }
 
-            // Read the latest window from circular buffer
             circularBuffer.readLatest(windowBuffer, windowSamples)
 
-            // Check loudness
             val rmsDb = calculateRmsDb(windowBuffer)
             if (rmsDb < Constants.LOUDNESS_THRESHOLD_DB) {
                 handleSilenceFrame()
@@ -201,7 +239,6 @@ class AudioCaptureService : Service() {
                 continue
             }
 
-            // Classify with WebRTC VAD
             val result = speechClassifier.classify(windowBuffer)
 
             if (result.isSpeech) {
@@ -234,10 +271,9 @@ class AudioCaptureService : Service() {
 
         val timeSinceLastSpeech = System.currentTimeMillis() - lastValidSpeechEndTimeMs
         val isConversationActive = timeSinceLastSpeech < Constants.CONVERSATION_TIMEOUT_MS
-        val currentOnsetFrames = if (isConversationActive) 1 else 2 // Silero is accurate — 1 positive window in ACTIVE, 2 in IDLE
+        val currentOnsetFrames = if (isConversationActive) 1 else 2
 
         if (!isInSpeechSegment && consecutiveSpeechFrames >= currentOnsetFrames) {
-            // Start new speech segment
             isInSpeechSegment = true
             speechStartTimeMs = System.currentTimeMillis()
             currentSegmentId = java.util.UUID.randomUUID().toString().take(8)
@@ -247,17 +283,14 @@ class AudioCaptureService : Service() {
             updateNotification("Speech detected")
             Log.d(TAG, "Speech segment started: $currentSegmentId (conf=$confidence)")
 
-            // Rewind the encoding pointer to capture pre-roll, then send it
             val preRollSamples = (Constants.SAMPLE_RATE * Constants.PRE_ROLL_SECONDS).toInt()
             circularBuffer.rewindReadPos(preRollSamples)
             extractAndSendPreRoll()
         }
 
         if (isInSpeechSegment) {
-            // Extract and send current newly captured audio chunks
             extractAndSendChunk(confidence, isFinal = false)
 
-            // Check if we need to force end due to maximum recording length
             val elapsed = System.currentTimeMillis() - speechStartTimeMs
             if (elapsed > Constants.MAX_SPEECH_SEGMENT_SECONDS * 1000L) {
                 Log.d(TAG, "Max segment duration reached, forcing end")
@@ -274,7 +307,6 @@ class AudioCaptureService : Service() {
         consecutiveSpeechFrames = 0
 
         if (isInSpeechSegment && consecutiveSilenceFrames >= speechOffsetFrames) {
-            // End speech segment
             val duration = System.currentTimeMillis() - speechStartTimeMs
 
             isInSpeechSegment = false
@@ -286,39 +318,72 @@ class AudioCaptureService : Service() {
             val currentMinDuration = if (isConversationActive) Constants.MIN_SPEECH_DURATION_ACTIVE_MS else Constants.MIN_SPEECH_DURATION_IDLE_MS
 
             if (duration >= currentMinDuration) {
-                // Send final chunk marker
                 extractAndSendChunk(0f, isFinal = true)
                 Log.d(TAG, "Speech segment ended: $currentSegmentId (${duration}ms) - State: ${if(isConversationActive) "ACTIVE" else "IDLE"}")
                 lastValidSpeechEndTimeMs = System.currentTimeMillis()
             } else {
                 Log.d(TAG, "Speech segment too short, discarding: ${duration}ms < ${currentMinDuration}ms")
             }
-            // Reset Silero LSTM state so residual context from this segment doesn't
-            // bleed into the next detection window
             speechClassifier.resetState()
         }
     }
 
-    private fun syncPendingChunks() {
+    /**
+     * Sends a SYNC_START control message (with syncId + battery), transfers all pending
+     * chunks to the phone, then returns. The syncId lets the phone group all segments
+     * from this transfer into a single log entry.
+     */
+    private suspend fun performSync() {
+        val syncId = java.util.UUID.randomUUID().toString().take(8)
+        val bm = getSystemService(Context.BATTERY_SERVICE) as BatteryManager
+        val battery = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
+
+        val extras = buildMap {
+            put(DataLayerPaths.KEY_SYNC_ID, syncId)
+            if (battery >= 0) put(DataLayerPaths.KEY_BATTERY_LEVEL, battery.toString())
+        }
+        dataLayerSender.sendControlMessage(DataLayerPaths.CMD_SYNC_START, extras)
+        Log.i(TAG, "Sync start: $syncId battery=$battery%")
+
+        syncPendingChunks()
+    }
+
+    private suspend fun syncPendingChunks() {
         val files = chunkRepository.getPendingChunkFiles()
         if (files.isEmpty()) return
 
-        serviceScope.launch {
-            for (file in files) {
-                val chunk = chunkRepository.readChunk(file)
-                if (chunk != null) {
-                    val success = dataLayerSender.sendAudioChunk(chunk)
-                    if (success) {
-                        chunkRepository.deleteChunkFile(file)
-                    } else {
-                        // Connection failed or dropped mid-sync, gracefully abort to retry later
-                        Log.w(TAG, "Sync aborted, connection lost during transmission")
-                        break
-                    }
-                } else {
-                    // File was corrupted or unreadable, discard
+        for (file in files) {
+            val chunk = chunkRepository.readChunk(file)
+            if (chunk != null) {
+                val success = dataLayerSender.sendAudioChunk(chunk)
+                if (success) {
                     chunkRepository.deleteChunkFile(file)
+                } else {
+                    Log.w(TAG, "Sync aborted, connection lost during transmission")
+                    break
                 }
+            } else {
+                chunkRepository.deleteChunkFile(file)
+            }
+        }
+    }
+
+    /**
+     * Sends the current recording state to the phone so the UI reflects watch-side changes.
+     * Called on startCapture() and stopCapture().
+     */
+    private fun notifyPhoneRecordingState(recording: Boolean) {
+        serviceScope.launch {
+            dataLayerSender.checkConnectivity()
+            if (dataLayerSender.isConnected) {
+                val bm = getSystemService(Context.BATTERY_SERVICE) as BatteryManager
+                val battery = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
+                val extras = buildMap {
+                    put(DataLayerPaths.KEY_IS_RECORDING, recording.toString())
+                    if (battery >= 0) put(DataLayerPaths.KEY_BATTERY_LEVEL, battery.toString())
+                }
+                dataLayerSender.sendControlMessage(DataLayerPaths.CMD_STATUS_RESPONSE, extras)
+                Log.d(TAG, "Notified phone: isRecording=$recording battery=$battery%")
             }
         }
     }
@@ -358,11 +423,7 @@ class AudioCaptureService : Service() {
                 isFinal = isFinal
             )
             chunkRepository.saveChunk(chunk)
-            
-            // Blast the absolute payload completely across BLE natively on sentence completion
-            if (isFinal) {
-                syncPendingChunks()
-            }
+            // Chunks are now synced on the hourly schedule, not per-segment
         }
     }
 
@@ -374,7 +435,7 @@ class AudioCaptureService : Service() {
             sum += normalized * normalized
         }
         val rms = Math.sqrt(sum / samples.size)
-        return if (rms > 0) 20.0 * Math.log10(rms) + 90.0 else 0.0 // dB SPL approximation
+        return if (rms > 0) 20.0 * Math.log10(rms) + 90.0 else 0.0
     }
 
     private fun createNotificationChannel() {

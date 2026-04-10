@@ -36,6 +36,9 @@ object Constants {
 
     // Connectivity sync
     const val CONNECTIVITY_POLL_INTERVAL_MS = 120_000L // Check every 2 min (was 30s)
+    const val HOURLY_SYNC_INTERVAL_MS = 3_600_000L     // Sync data to phone every hour
+    const val PREF_LAST_SYNC_TIME     = "last_sync_time_ms"
+    const val PREFS_NAME              = "omi4wos_wear_prefs"
 
     // Opus encoder parameters
     const val OPUS_BITRATE = 24000 // 24 kbps - good for speech

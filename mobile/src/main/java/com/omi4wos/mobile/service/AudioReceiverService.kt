@@ -10,8 +10,10 @@ import com.omi4wos.shared.AudioChunk
 import com.omi4wos.shared.DataLayerPaths
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -25,7 +27,7 @@ import java.util.concurrent.ConcurrentHashMap
  * WearableListenerService that receives audio chunks from the watch
  * via the Wear Data Layer MessageClient API.
  *
- * Deserializes incoming messages and forwards them to the TranscriptionService.
+ * Deserializes incoming messages and forwards them to the AudioUploadService.
  */
 class AudioReceiverService : WearableListenerService() {
 
@@ -35,7 +37,7 @@ class AudioReceiverService : WearableListenerService() {
         // Observable state
         private val _watchConnected = MutableStateFlow(false)
         val watchConnected: StateFlow<Boolean> = _watchConnected
-        
+
         fun setWatchConnected(connected: Boolean) {
             _watchConnected.value = connected
         }
@@ -49,9 +51,21 @@ class AudioReceiverService : WearableListenerService() {
         private val _isReceivingAudio = MutableStateFlow(false)
         val isReceivingAudio: StateFlow<Boolean> = _isReceivingAudio
 
+        private val _watchBatteryLevel = MutableStateFlow(-1)
+        val watchBatteryLevel: StateFlow<Int> = _watchBatteryLevel
+
+        private val _watchRecordingEnabled = MutableStateFlow(false)
+        val watchRecordingEnabled: StateFlow<Boolean> = _watchRecordingEnabled
+
+        // Tracks the active sync session so all segments in a batch share one syncId
+        @Volatile private var currentSyncId: String = ""
+
         // Shared segment tracking — used by both WearableListenerService and direct listener
         private val activeSegments = ConcurrentHashMap<String, MutableList<AudioChunk>>()
         private val companionScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+        // Auto-clears isReceivingAudio if the final chunk is lost (debounce safety net)
+        @Volatile private var audioTimeoutJob: Job? = null
 
         /**
          * Process an incoming message from either WearableListenerService or a direct
@@ -71,21 +85,28 @@ class AudioReceiverService : WearableListenerService() {
                 val chunk = deserializeChunk(data)
 
                 val segmentChunks = activeSegments.getOrPut(chunk.segmentId) { mutableListOf() }
-                
+
                 // Deduplicate: Some watches fire both WearableListenerService and MessageClient listeners!
                 if (segmentChunks.any { it.chunkIndex == chunk.chunkIndex }) {
                     return
                 }
-                
+
                 segmentChunks.add(chunk)
 
                 if (!chunk.isFinal) {
                     _isReceivingAudio.value = true
+                    // Safety net: if the final chunk is lost, clear the flag after 5 s of silence
+                    audioTimeoutJob?.cancel()
+                    audioTimeoutJob = companionScope.launch {
+                        delay(5_000L)
+                        _isReceivingAudio.value = false
+                    }
                 }
 
                 companionScope.launch { _audioChunkFlow.emit(chunk) }
 
                 if (chunk.isFinal) {
+                    audioTimeoutJob?.cancel()
                     _isReceivingAudio.value = false
                     val completeSegment = activeSegments.remove(chunk.segmentId)
                     if (completeSegment != null && completeSegment.isNotEmpty()) {
@@ -104,6 +125,42 @@ class AudioReceiverService : WearableListenerService() {
                 val dis = DataInputStream(ByteArrayInputStream(data))
                 val command = dis.readUTF()
                 Log.d(TAG, "Control message: $command")
+
+                when (command) {
+                    DataLayerPaths.CMD_BATTERY_LEVEL -> {
+                        val count = dis.readInt()
+                        val extras = buildMap<String, String> {
+                            repeat(count) { put(dis.readUTF(), dis.readUTF()) }
+                        }
+                        val level = extras[DataLayerPaths.KEY_BATTERY_LEVEL]?.toIntOrNull() ?: -1
+                        _watchBatteryLevel.value = level
+                        Log.i(TAG, "Watch battery level: $level%")
+                    }
+                    DataLayerPaths.CMD_SYNC_START -> {
+                        val count = dis.readInt()
+                        val extras = buildMap<String, String> {
+                            repeat(count) { put(dis.readUTF(), dis.readUTF()) }
+                        }
+                        currentSyncId = extras[DataLayerPaths.KEY_SYNC_ID] ?: ""
+                        extras[DataLayerPaths.KEY_BATTERY_LEVEL]?.toIntOrNull()?.let {
+                            _watchBatteryLevel.value = it
+                        }
+                        Log.i(TAG, "Sync session started: $currentSyncId battery=${_watchBatteryLevel.value}%")
+                    }
+                    DataLayerPaths.CMD_STATUS_RESPONSE -> {
+                        val count = dis.readInt()
+                        val extras = buildMap<String, String> {
+                            repeat(count) { put(dis.readUTF(), dis.readUTF()) }
+                        }
+                        val isRecording = extras[DataLayerPaths.KEY_IS_RECORDING]?.toBoolean() ?: false
+                        _watchRecordingEnabled.value = isRecording
+                        extras[DataLayerPaths.KEY_BATTERY_LEVEL]?.toIntOrNull()?.let {
+                            _watchBatteryLevel.value = it
+                        }
+                        Log.i(TAG, "Watch state: isRecording=$isRecording battery=${extras[DataLayerPaths.KEY_BATTERY_LEVEL]}%")
+                    }
+                    else -> Log.d(TAG, "Unhandled control command: $command")
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to parse control message", e)
             }
@@ -126,13 +183,20 @@ class AudioReceiverService : WearableListenerService() {
                 0f
             }
 
-            val intent = Intent(context, TranscriptionService::class.java).apply {
-                action = TranscriptionService.ACTION_TRANSCRIBE
-                putExtra(TranscriptionService.EXTRA_SEGMENT_ID, segmentId)
-                putExtra(TranscriptionService.EXTRA_AUDIO_DATA, combinedAudio)
-                putExtra(TranscriptionService.EXTRA_START_TIME, startTime)
-                putExtra(TranscriptionService.EXTRA_END_TIME, endTime)
-                putExtra(TranscriptionService.EXTRA_CONFIDENCE, avgConfidence)
+            val audioSizeBytes = combinedAudio.size.toLong()
+            val batteryLevel = _watchBatteryLevel.value
+            val syncId = currentSyncId
+
+            val intent = Intent(context, AudioUploadService::class.java).apply {
+                action = AudioUploadService.ACTION_UPLOAD
+                putExtra(AudioUploadService.EXTRA_SEGMENT_ID, segmentId)
+                putExtra(AudioUploadService.EXTRA_SYNC_ID, syncId)
+                putExtra(AudioUploadService.EXTRA_AUDIO_DATA, combinedAudio)
+                putExtra(AudioUploadService.EXTRA_START_TIME, startTime)
+                putExtra(AudioUploadService.EXTRA_END_TIME, endTime)
+                putExtra(AudioUploadService.EXTRA_CONFIDENCE, avgConfidence)
+                putExtra(AudioUploadService.EXTRA_BATTERY_LEVEL, batteryLevel)
+                putExtra(AudioUploadService.EXTRA_AUDIO_SIZE_BYTES, audioSizeBytes)
             }
             context.startService(intent)
         }

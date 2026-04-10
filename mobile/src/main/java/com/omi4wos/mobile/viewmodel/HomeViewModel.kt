@@ -6,10 +6,13 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.android.gms.wearable.MessageClient
 import com.google.android.gms.wearable.Wearable
-import com.omi4wos.mobile.data.TranscriptEntity
-import com.omi4wos.mobile.data.TranscriptRepository
+import com.omi4wos.mobile.data.SyncSummary
+import com.omi4wos.mobile.data.UploadRepository
+import com.omi4wos.mobile.omi.OmiApiClient
+import com.omi4wos.mobile.omi.OmiConfig
 import com.omi4wos.mobile.service.AudioReceiverService
-import com.omi4wos.mobile.service.TranscriptionService
+import com.omi4wos.mobile.service.AudioUploadService
+import com.omi4wos.shared.DataLayerPaths
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -17,21 +20,23 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import java.io.File
 
 data class HomeUiState(
     val watchConnected: Boolean = false,
-    val isRecording: Boolean = false,
-    val totalSegments: Int = 0,
-    val totalTranscripts: Int = 0,
-    val totalUploaded: Int = 0,
-    val recentTranscripts: List<TranscriptEntity> = emptyList()
+    val isReceivingAudio: Boolean = false,
+    val watchRecordingEnabled: Boolean = false,
+    val watchBatteryLevel: Int = -1,
+    val totalUploads: Int = 0,
+    val uploadFailures: Int = 0,
+    val recentSyncs: List<SyncSummary> = emptyList()
 )
 
 class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     companion object { private const val TAG = "HomeViewModel" }
 
-    private val repository = TranscriptRepository.getInstance(application)
+    private val repository = UploadRepository.getInstance(application)
     private val messageClient = Wearable.getMessageClient(application)
     private val nodeClient = Wearable.getNodeClient(application)
 
@@ -48,8 +53,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         messageClient.addListener(messageListener)
         checkWatchConnectivity()
         observeState()
-        
-        // Auto-retry failed uploads silently when the app is opened
+        queryWatchRecordingState()
         retryPendingUploads()
     }
 
@@ -57,13 +61,9 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             try {
                 val nodes = nodeClient.connectedNodes.await()
-                Log.i(TAG, "Connected nodes from phone: ${nodes.map { it.displayName }}")
-                
-                // Completely sync the native NodeClient truth into our local states
-                val isActuallyConnected = nodes.isNotEmpty()
-                AudioReceiverService.setWatchConnected(isActuallyConnected)
-                _uiState.value = _uiState.value.copy(watchConnected = isActuallyConnected)
-                
+                val connected = nodes.isNotEmpty()
+                AudioReceiverService.setWatchConnected(connected)
+                _uiState.value = _uiState.value.copy(watchConnected = connected)
             } catch (e: Exception) {
                 Log.e(TAG, "Node check failed", e)
             }
@@ -76,45 +76,44 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun observeState() {
-        // Observe watch connection and segment count
         viewModelScope.launch {
             AudioReceiverService.watchConnected.collect { connected ->
                 _uiState.value = _uiState.value.copy(watchConnected = connected)
             }
         }
-
-        viewModelScope.launch {
-            AudioReceiverService.segmentsReceived.collect { count ->
-                _uiState.value = _uiState.value.copy(totalSegments = count)
-            }
-        }
-
         viewModelScope.launch {
             AudioReceiverService.isReceivingAudio.collect { receiving ->
-                _uiState.value = _uiState.value.copy(isRecording = receiving)
+                _uiState.value = _uiState.value.copy(isReceivingAudio = receiving)
+            }
+        }
+        viewModelScope.launch {
+            AudioReceiverService.watchBatteryLevel.collect { level ->
+                _uiState.value = _uiState.value.copy(watchBatteryLevel = level)
+            }
+        }
+        viewModelScope.launch {
+            AudioReceiverService.watchRecordingEnabled.collect { enabled ->
+                _uiState.value = _uiState.value.copy(watchRecordingEnabled = enabled)
             }
         }
 
-        // Observe transcript database
-        repository.getRecentTranscripts(20)
-            .onEach { transcripts ->
-                _uiState.value = _uiState.value.copy(
-                    recentTranscripts = transcripts
-                )
+        repository.getRecentSyncSummaries(20)
+            .onEach { syncs ->
+                _uiState.value = _uiState.value.copy(recentSyncs = syncs)
             }
             .launchIn(viewModelScope)
 
-        repository.getTotalCount()
-            .onEach { count ->
-                _uiState.value = _uiState.value.copy(totalTranscripts = count)
-            }
-            .launchIn(viewModelScope)
-
-        repository.getUploadedCount()
-            .onEach { count ->
-                _uiState.value = _uiState.value.copy(totalUploaded = count)
-            }
-            .launchIn(viewModelScope)
+        combine(
+            repository.getTotalCount(),
+            repository.getUploadedCount()
+        ) { total, uploaded ->
+            Pair(total, (total - uploaded).coerceAtLeast(0))
+        }.onEach { (total, failures) ->
+            _uiState.value = _uiState.value.copy(
+                totalUploads = total,
+                uploadFailures = failures
+            )
+        }.launchIn(viewModelScope)
     }
 
     fun retryPendingUploads() {
@@ -122,13 +121,13 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             val pending = repository.getPendingUploads()
             if (pending.isEmpty()) return@launch
 
-            val config = com.omi4wos.mobile.omi.OmiConfig(getApplication())
-            val apiClient = com.omi4wos.mobile.omi.OmiApiClient()
-            val cacheDir = java.io.File(getApplication<Application>().cacheDir, "speech_audio")
+            val config = OmiConfig(getApplication())
+            val apiClient = OmiApiClient()
+            val cacheDir = File(getApplication<Application>().cacheDir, "speech_audio")
 
-            for (entity in pending) {
-                val uploadName = "recording_fs320_${entity.timestamp / 1000}.bin"
-                val binFile = java.io.File(cacheDir, uploadName)
+            for (record in pending) {
+                val uploadName = "recording_fs320_${record.timestamp / 1000}.bin"
+                val binFile = File(cacheDir, uploadName)
 
                 if (binFile.exists()) {
                     val token = apiClient.getValidFirebaseToken(config)
@@ -136,23 +135,55 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                         try {
                             val result = apiClient.uploadAudioSync(token, binFile, uploadName)
                             if (result != null) {
-                                repository.markUploaded(entity.id)
+                                repository.markUploaded(record.id)
                                 binFile.delete()
-                                // Update text
-                                repository.insert(entity.copy(
-                                    uploadedToOmi = true,
-                                    text = "[Uploaded directly to Omi Cloud: $uploadName]"
-                                ))
                             }
                         } catch (e: Exception) {
-                            Log.e(TAG, "Retry failed for ${entity.id}", e)
+                            Log.e(TAG, "Retry failed for ${record.id}", e)
                         }
                     } else {
-                        Log.e(TAG, "Cannot retry, valid token unavailable")
+                        Log.e(TAG, "Cannot retry — no valid token")
                     }
                 } else {
                     Log.w(TAG, "File missing for retry: $uploadName")
                 }
+            }
+        }
+    }
+
+    /** Sends a force-sync command to the watch — triggers immediate upload of all pending chunks. */
+    fun forceSyncWatch() {
+        sendWatchCommand(DataLayerPaths.CMD_FORCE_SYNC)
+    }
+
+    fun startWatchRecording() {
+        _uiState.value = _uiState.value.copy(watchRecordingEnabled = true)
+        sendWatchCommand(DataLayerPaths.CMD_START_RECORDING)
+    }
+
+    fun stopWatchRecording() {
+        _uiState.value = _uiState.value.copy(watchRecordingEnabled = false)
+        sendWatchCommand(DataLayerPaths.CMD_STOP_RECORDING)
+    }
+
+    private fun queryWatchRecordingState() {
+        sendWatchCommand(DataLayerPaths.CMD_STATUS_REQUEST)
+    }
+
+    private fun sendWatchCommand(command: String) {
+        viewModelScope.launch {
+            try {
+                val nodes = nodeClient.connectedNodes.await()
+                val watch = nodes.firstOrNull()
+                    ?: run { Log.w(TAG, "No watch connected, cannot send: $command"); return@launch }
+                messageClient.sendMessage(
+                    watch.id,
+                    DataLayerPaths.AUDIO_CONTROL_PATH,
+                    command.toByteArray(Charsets.UTF_8)
+                ).await()
+                Log.i(TAG, "Sent '$command' to ${watch.displayName}")
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to send '$command'", e)
             }
         }
     }
