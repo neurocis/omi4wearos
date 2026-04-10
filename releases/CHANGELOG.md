@@ -1,5 +1,29 @@
 # Changelog
 
+## v1.3 — 2026-04-09
+
+### Mobile (`Omi4wOS_Mobile_v1.3.apk`)
+
+**New**
+- Realtime Stream mode: each completed speech segment is synced to the phone and uploaded to Omi immediately after it ends, minimising latency between speech and cloud availability.
+- Batch Stream mode with a user-configurable interval — choose from 5, 10, 15, 30, 60, 90, or 120 minutes (default 60). Setting is persisted in DataStore and pushed to the watch over the Data Layer automatically.
+- Sync Mode card on the home screen with a Realtime/Batch toggle and an interval dropdown (batch mode only).
+- When Realtime Stream is active the Force Sync button is replaced with a "● Realtime Mode" indicator — manual triggers are unnecessary when every segment already syncs on completion.
+
+**Changed**
+- Batch interval is now a dropdown picker instead of a free-text field, preventing a command storm to the watch on every keystroke.
+
+---
+
+### Wear (`Omi4wOS_Wear_v1.3.apk`)
+
+**New**
+- Receives `SET_STREAM_MODE` command from phone and stores the selected mode and batch interval in SharedPreferences (survives service restarts).
+- In Realtime mode: triggers an immediate `performSync()` after every finalized speech segment.
+- In Batch mode: scheduled sync loop now reads the configured interval from prefs instead of using the hardcoded 60-minute constant.
+
+---
+
 ## v1.2 — 2026-04-09
 
 ### Mobile (`Omi4wOS_Mobile_v1.2.apk`)
