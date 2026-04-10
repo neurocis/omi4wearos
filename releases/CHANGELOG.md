@@ -1,12 +1,12 @@
 # Changelog
 
-## v1.3 — 2026-04-09
+## v1.4 — 2026-04-10
 
-### Mobile (`Omi4wOS_Mobile_v1.3.apk`)
+### Mobile (`Omi4wOS_Mobile_v1.4.apk`)
 
 **New**
 - Realtime Stream mode: each completed speech segment is synced to the phone and uploaded to Omi immediately after it ends, minimising latency between speech and cloud availability.
-- Batch Stream mode with a user-configurable interval — choose from 5, 10, 15, 30, 60, 90, or 120 minutes (default 60). Setting is persisted in DataStore and pushed to the watch over the Data Layer automatically.
+- Batch Stream mode with a user-configurable interval — choose from `:00`, `:30`, 5, 10, 15, 30, 60, 90, or 120 minutes (default 60). Setting is persisted in DataStore and pushed to the watch over the Data Layer automatically.
 - Sync Mode card on the home screen with a Realtime/Batch toggle and an interval dropdown (batch mode only).
 - When Realtime Stream is active the Force Sync button is replaced with a "● Realtime Mode" indicator — manual triggers are unnecessary when every segment already syncs on completion.
 
@@ -15,12 +15,16 @@
 
 ---
 
-### Wear (`Omi4wOS_Wear_v1.3.apk`)
+### Wear (`Omi4wOS_Wear_v1.4.apk`)
 
 **New**
 - Receives `SET_STREAM_MODE` command from phone and stores the selected mode and batch interval in SharedPreferences (survives service restarts).
 - In Realtime mode: triggers an immediate `performSync()` after every finalized speech segment.
 - In Batch mode: scheduled sync loop now reads the configured interval from prefs instead of using the hardcoded 60-minute constant.
+- Clock-aligned sync intervals: `:00` syncs at the top of each hour; `:30` syncs at :00 and :30 of each hour. Both modes compare the last sync time against the most recently passed clock boundary rather than counting down from last sync.
+
+**Fixed**
+- Service crash on OS kill (overnight battery optimization): `START_STICKY` was restarting the service with `intent=null`, but the null branch fell through without calling `startForeground()`, causing an immediate re-kill. Now the null-intent restart reads `PREF_RECORDING_ENABLED` from SharedPreferences — if recording was active when killed, it resumes automatically; otherwise the service shuts down cleanly.
 
 ---
 
