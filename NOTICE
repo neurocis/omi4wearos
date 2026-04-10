@@ -1,0 +1,36 @@
+omi4wOS — WearOS Direct Cloud Sync Edition
+Copyright 2026 cipioh + neurocis
+
+Brought to you by: cipioh + neurocis
+
+This product is licensed under the Apache License, Version 2.0.
+A copy of the license is included in the LICENSE file at the root of this repository,
+and is also available at http://www.apache.org/licenses/LICENSE-2.0
+
+-------------------------------------------------------------------------------
+
+ATTRIBUTION REQUIREMENT
+
+If you distribute this software or a Derivative Work of it, you must:
+
+  1. Retain this NOTICE file in full.
+  2. Include a copy of the LICENSE file (Apache 2.0).
+  3. Display the following attribution in your documentation, app UI, or
+     other materials accompanying the distribution:
+
+       "Based on omi4wOS, Copyright 2026 cipioh + neurocis.
+        Licensed under the Apache License, Version 2.0.
+        Original source: https://github.com/cipioh/omi4wos-cipioh"
+
+-------------------------------------------------------------------------------
+
+THIRD-PARTY COMPONENTS
+
+This product incorporates components from the following open source projects:
+
+  - Silero VAD (ONNX model) — MIT License — https://github.com/snakers4/silero-vad
+  - android-vad by Georgiy Konovalov — MIT License — https://github.com/gkonovalov/android-vad
+  - OnnxRuntime for Android — MIT License — https://github.com/microsoft/onnxruntime
+  - Jetpack Compose — Apache 2.0 — https://developer.android.com/jetpack/compose
+  - OkHttp — Apache 2.0 — https://square.github.io/okhttp/
+  - Android Wear Data Layer API — Apache 2.0 — https://developer.android.com/training/wearables/data-layer

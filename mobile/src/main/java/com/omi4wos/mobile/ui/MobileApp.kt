@@ -3,6 +3,7 @@ package com.omi4wos.mobile.ui
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -16,6 +17,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.omi4wos.mobile.ui.screens.AboutScreen
 import com.omi4wos.mobile.ui.screens.HomeScreen
 import com.omi4wos.mobile.ui.screens.SettingsScreen
 import com.omi4wos.mobile.ui.theme.Omi4wosTheme
@@ -54,6 +56,18 @@ fun MobileApp() {
                             }
                         }
                     )
+                    NavigationBarItem(
+                        icon = { Icon(Icons.Default.Info, contentDescription = "About") },
+                        label = { Text("About") },
+                        selected = currentRoute == "about",
+                        onClick = {
+                            if (currentRoute != "about") {
+                                navController.navigate("about") {
+                                    popUpTo("home")
+                                }
+                            }
+                        }
+                    )
                 }
             }
         ) { paddingValues ->
@@ -67,6 +81,9 @@ fun MobileApp() {
                 }
                 composable("settings") {
                     SettingsScreen()
+                }
+                composable("about") {
+                    AboutScreen()
                 }
             }
         }
