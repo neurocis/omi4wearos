@@ -88,8 +88,11 @@ class AudioCaptureService : Service() {
     private var chunkIndex = 0
     private var isInSpeechSegment = false
 
-    // Thresholds for hysteresis
-    private val speechOffsetFrames = 3 // Need 3 consecutive silence frames to end (Silero windows ~1.2s each)
+    // Thresholds for hysteresis.
+    // 6 × 960ms ≈ 5.76 s of continuous silence required to end a segment.
+    // This comfortably covers natural breath pauses (0.5–2 s) and brief thinking
+    // pauses mid-sentence without fragmenting a conversation into many short clips.
+    private val speechOffsetFrames = 6
 
     // Dynamic Conversation Tracking
     private var lastValidSpeechEndTimeMs: Long = 0L

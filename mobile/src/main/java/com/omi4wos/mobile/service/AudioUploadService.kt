@@ -61,6 +61,13 @@ class AudioUploadService : Service() {
         // end time are treated as a separate conversation and get their own upload.
         private const val SESSION_GAP_MS = 5 * 60 * 1000L // 5 minutes
 
+        // Placeholder key for segments that arrive before CMD_SYNC_START is processed.
+        // The Wear Data Layer does not guarantee cross-path ordering, so audio chunks on
+        // /audio/speech/ can be fully assembled before the SYNC_START control message on
+        // /audio/control/ is handled. We buffer them here and absorb into the real
+        // syncId when flushBatch() is called.
+        private const val PENDING_SYNC_KEY = "__pending__"
+
         private val _isUploading = MutableStateFlow(false)
         val isUploading: StateFlow<Boolean> = _isUploading
 
@@ -117,8 +124,14 @@ class AudioUploadService : Service() {
                 if (audioData != null && audioData.isNotEmpty()) {
                     serviceScope.launch {
                         val config = omiConfig.getConfig()
-                        if (config.streamMode == Constants.STREAM_MODE_BATCH && syncId.isNotEmpty()) {
-                            bufferSegment(PendingSegment(segmentId, syncId, audioData, startTime, endTime, confidence, batteryLevel, audioSizeBytes))
+                        if (config.streamMode == Constants.STREAM_MODE_BATCH) {
+                            // Buffer even when syncId is empty: the Wear Data Layer does not
+                            // guarantee that CMD_SYNC_START (control path) arrives before the
+                            // first audio chunk (speech path). Segments with no syncId are
+                            // held under PENDING_SYNC_KEY and merged into the real syncId
+                            // inside flushBatch() when CMD_SYNC_END is processed.
+                            val effectiveSyncId = syncId.ifEmpty { PENDING_SYNC_KEY }
+                            bufferSegment(PendingSegment(segmentId, effectiveSyncId, audioData, startTime, endTime, confidence, batteryLevel, audioSizeBytes))
                         } else {
                             uploadSegment(segmentId, syncId, audioData, startTime, endTime, confidence, batteryLevel, audioSizeBytes)
                         }
@@ -208,10 +221,20 @@ class AudioUploadService : Service() {
     }
 
     private suspend fun flushBatch(syncId: String) {
-        // Small delay to let any in-flight ACTION_UPLOAD coroutines finish buffering
-        // before we snapshot the map. The watch sends CMD_SYNC_END after the last chunk,
-        // but coroutine scheduling means the last buffer() call may not have run yet.
-        delay(500)
+        // Generous delay to let all in-flight ACTION_UPLOAD coroutines finish buffering.
+        // CMD_SYNC_END is sent by the watch after the last chunk, but coroutine scheduling
+        // and Binder delivery can mean the last segment arrives just after the flush starts.
+        delay(2_000)
+
+        // Absorb any segments that raced ahead of CMD_SYNC_START (arrived with empty syncId).
+        // There is at most one active batch sync at a time, so all pending segments belong here.
+        val racing = pendingBatchSegments.remove(PENDING_SYNC_KEY)
+        if (!racing.isNullOrEmpty()) {
+            Log.i(TAG, "Absorbing ${racing.size} pre-SYNC_START segment(s) into syncId=$syncId")
+            pendingBatchSegments
+                .getOrPut(syncId) { Collections.synchronizedList(mutableListOf()) }
+                .addAll(racing)
+        }
 
         val segments = pendingBatchSegments.remove(syncId)
         if (segments.isNullOrEmpty()) {
