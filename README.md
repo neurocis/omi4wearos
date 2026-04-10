@@ -17,8 +17,10 @@ The phone companion APK is required for both watch builds. Pick the APKs that ma
 
 | File | Description |
 |---|---|
-| `Omi4wOS_Mobile_v1.3.apk` | **Recommended phone build.** Realtime/Batch stream mode toggle, configurable batch interval, Force Sync hidden in realtime mode. Install onto your **Android Phone**. |
-| `Omi4wOS_Wear_v1.3.apk` | **Recommended watch build.** Respects stream mode from phone — syncs per-segment in realtime mode or on configured schedule in batch mode. Install via ADB onto your **Watch**. |
+| `Omi4wOS_Mobile_v1.4.apk` | **Recommended phone build.** Realtime/Batch stream mode toggle, clock-aligned sync intervals, configurable batch interval. Install onto your **Android Phone**. |
+| `Omi4wOS_Wear_v1.4.apk` | **Recommended watch build.** Clock-aligned sync, START_STICKY crash fix, respects stream mode from phone. Install via ADB onto your **Watch**. |
+| `Omi4wOS_Mobile_v1.3.apk` | Phone build with Realtime/Batch toggle and configurable interval (no clock-aligned options). |
+| `Omi4wOS_Wear_v1.3.apk` | Watch build with stream mode support (no clock-aligned sync, no crash fix). |
 | `Omi4wOS_Mobile_v1.2.apk` | Phone build with upload tracking + retry, live watch status. |
 | `Omi4wOS_Wear_v1.2_Silero.apk` | Watch build with Silero LSTM VAD, force-sync/start/stop support. |
 | `Omi4wOS_Wear_v1.1_Silero.apk` | Silero VAD with 1.5s pre-roll (sometimes clips first words). |
@@ -97,15 +99,17 @@ To interface perfectly with Omi Cloud natively, this system securely routes thro
 2. **Loudness Gate**: Each 960ms window is checked against a 52dB RMS threshold before any inference runs. Windows below the threshold are skipped entirely, keeping the CPU idle during silence.
 3. **Silero VAD**: An LSTM neural network (Silero) evaluates each window that passes the loudness gate. It classifies 30 × 32ms frames per window and reports a speech probability per frame. Windows with ≥4 frames above 0.5 probability are flagged as speech.
 4. **Local Caching**: Audio containing voice activity is Opus-encoded and immediately serialized to the watch's internal filesystem. This ensures no data is lost if the watch is away from the phone.
-5. **Data Transmission**: Once a sentence concludes, the watch evaluates Bluetooth connectivity. In **Realtime Stream** mode, the watch immediately transmits the completed segment as soon as it ends. In **Batch Stream** mode (default: 60 minutes, user-configurable), the watch accumulates segments and syncs them on a timed schedule. If disconnected, files are securely retained until a background worker syncs them upon reconnection.
+5. **Data Transmission**: Once a sentence concludes, the watch evaluates Bluetooth connectivity. In **Realtime Stream** mode, the watch immediately transmits the completed segment as soon as it ends. In **Batch Stream** mode, the watch accumulates segments and syncs on a schedule you set from the phone companion. Available intervals: `:00` (once per hour, at the top of the hour), `:30` (twice per hour, at :00 and :30), or fixed durations of 5, 10, 15, 30, 60, 90, or 120 minutes. The `:00` and `:30` options are clock-aligned — the watch checks whether the most recently passed boundary (:00 or :30) has not yet been synced, so syncs happen at predictable wall-clock times regardless of when the app started. Fixed-duration intervals count down from the last sync. If disconnected, files are securely retained until a background worker syncs them upon reconnection.
 6. **Phone**: The companion app listens on the Data Layer, assembling the received Opus payloads into an `.bin` archive.
 7. **Cloud Upload**: The phone pushes the compiled `.bin` archive into the Omi Cloud using standard Firebase Authentication tokens.
 
-## What's New in v1.3
+## What's New in v1.4
 
-- **Realtime Stream Mode**: New sync mode that uploads each completed speech segment to Omi immediately after it ends, minimizing latency between speech and cloud availability. Toggle between Realtime and Batch from the phone companion UI.
-- **Configurable Batch Interval**: Batch Stream mode now exposes a user-adjustable upload interval (5, 10, 15, 30, 60, 90, or 120 minutes) rather than a fixed hourly schedule. The setting is persisted and pushed to the watch automatically.
-- **Force Sync removed in Realtime Mode**: When Realtime Stream is active, the Force Sync button is replaced with a "Realtime Mode" indicator, since per-segment syncing makes manual triggers unnecessary.
+- **Clock-Aligned Sync Intervals**: Two new batch interval options — `:00` and `:30`. `:00` syncs once per hour at the top of the hour. `:30` syncs twice per hour, at :00 and :30. Both compare against the most recently passed clock boundary rather than counting down from last sync, so uploads happen at predictable wall-clock times no matter when the app started.
+- **Watch Service Crash Fix**: Fixed an overnight crash caused by a `START_STICKY` null-intent restart. When Android's battery optimizer kills the foreground service and the OS restarts it, `onStartCommand` receives a null intent. Previously this fell through without calling `startForeground()`, causing an immediate re-kill. Now the watch reads a persisted `recording_enabled` flag from SharedPreferences on restart — if recording was active when killed, it resumes automatically; otherwise it shuts down cleanly.
+- **Realtime Stream Mode** *(introduced in v1.3)*: Uploads each completed speech segment to Omi immediately after it ends. Toggle between Realtime and Batch from the phone companion UI.
+- **Configurable Batch Interval** *(introduced in v1.3)*: Choose from `:00`, `:30`, 5, 10, 15, 30, 60, 90, or 120 minutes. Default is 60 minutes. Setting is persisted and pushed to the watch automatically.
+- **Force Sync removed in Realtime Mode** *(introduced in v1.3)*: Replaced with a "● Realtime Mode" indicator when per-segment syncing is active.
 
 ## Key Upgrades from Original Base
 
