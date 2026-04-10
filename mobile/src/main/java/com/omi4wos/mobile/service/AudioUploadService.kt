@@ -291,6 +291,12 @@ class AudioUploadService : Service() {
         return sessions
     }
 
+    /**
+     * Concatenates all segments in the session into a single .bin file and uploads it
+     * as one request. The Omi API creates one conversation per file, so sending N files
+     * in a multipart request still produces N conversations. A single concatenated file
+     * guarantees one conversation per session regardless of API behaviour.
+     */
     private suspend fun uploadSession(
         segments: List<PendingSegment>,
         token: String,
@@ -299,51 +305,58 @@ class AudioUploadService : Service() {
         totalSessions: Int
     ) {
         val label = if (totalSessions > 1) " (session $sessionNum/$totalSessions)" else ""
+        val sorted = segments.sortedBy { it.startTime }
 
-        val cachePath = File(cacheDir, "speech_audio")
-        if (!cachePath.exists()) cachePath.mkdirs()
-
-        val binFiles = mutableListOf<Pair<File, String>>()
-        for (seg in segments) {
-            val uploadName = "recording_fs320_${seg.startTime / 1000}.bin"
-            val binFile    = File(cachePath, uploadName)
-            withContext(Dispatchers.IO) {
-                FileOutputStream(binFile).use { it.write(seg.audioData) }
-            }
-            binFiles.add(binFile to uploadName)
+        // Concatenate all segment audio into one file
+        val totalAudioSize = sorted.sumOf { it.audioData.size }
+        val combined = ByteArray(totalAudioSize)
+        var offset = 0
+        for (seg in sorted) {
+            System.arraycopy(seg.audioData, 0, combined, offset, seg.audioData.size)
+            offset += seg.audioData.size
         }
 
-        val totalBytes = segments.sumOf { it.audioSizeBytes }
-        Log.i(TAG, "Batch upload$label: ${segments.size} file(s), ${formatSize(totalBytes)}")
+        val uploadName = "recording_fs320_${sorted.first().startTime / 1000}.bin"
+        val cachePath  = File(cacheDir, "speech_audio")
+        if (!cachePath.exists()) cachePath.mkdirs()
+        val binFile = File(cachePath, uploadName)
+        withContext(Dispatchers.IO) {
+            FileOutputStream(binFile).use { it.write(combined) }
+        }
+
+        val totalBytes = sorted.sumOf { it.audioSizeBytes }
+        Log.i(TAG, "Session upload$label: ${sorted.size} segment(s) → 1 file, ${formatSize(totalBytes)}")
 
         try {
-            val result = omiClient.uploadAudioBatch(token, binFiles)
+            val result = omiClient.uploadAudioSync(token, binFile, uploadName)
 
             if (result != null) {
-                val timeFmt = SimpleDateFormat("hh:mma", Locale.getDefault())
-                val dateFmt = SimpleDateFormat("MM/dd/yy hh:mma", Locale.getDefault())
-                val avgBattery = segments.map { it.batteryLevel }.filter { it >= 0 }
+                val timeFmt   = SimpleDateFormat("hh:mma", Locale.getDefault())
+                val dateFmt   = SimpleDateFormat("MM/dd/yy hh:mma", Locale.getDefault())
+                val avgBattery = sorted.map { it.batteryLevel }.filter { it >= 0 }
                     .let { if (it.isNotEmpty()) it.average().toInt() else -1 }
                 val batteryStr = if (avgBattery >= 0) "$avgBattery%" else "?%"
 
-                for (seg in segments) {
+                for (seg in sorted) {
                     val text = "${timeFmt.format(Date())}  |  Watch Battery: $batteryStr\n" +
-                               "Batch upload to Omi Cloud: ${formatSize(seg.audioSizeBytes)}\n" +
+                               "Uploaded to Omi Cloud: ${formatSize(seg.audioSizeBytes)}\n" +
                                "Spanning ${dateFmt.format(Date(seg.startTime))} to ${dateFmt.format(Date(seg.endTime))}"
                     saveRecord(seg.segmentId, syncId, text, seg.startTime, seg.endTime,
                         seg.confidence, seg.audioSizeBytes, seg.batteryLevel, uploaded = true)
                 }
-                for ((binFile, _) in binFiles) binFile.delete()
+                binFile.delete()
             } else {
-                for (seg in segments) {
-                    saveRecord(seg.segmentId, syncId, "[Batch Upload Failed]",
+                for (seg in sorted) {
+                    saveRecord(seg.segmentId, syncId, "[Upload Failed]",
                         seg.startTime, seg.endTime, seg.confidence, seg.audioSizeBytes, seg.batteryLevel, uploaded = false)
                 }
+                binFile.delete()
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Batch upload failed$label", e)
-            for (seg in segments) {
-                saveRecord(seg.segmentId, syncId, "[Batch upload error: ${e.message}]",
+            Log.e(TAG, "Session upload failed$label", e)
+            binFile.delete()
+            for (seg in sorted) {
+                saveRecord(seg.segmentId, syncId, "[Upload error: ${e.message}]",
                     seg.startTime, seg.endTime, seg.confidence, seg.audioSizeBytes, seg.batteryLevel, uploaded = false)
             }
         }

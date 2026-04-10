@@ -94,6 +94,12 @@ class AudioCaptureService : Service() {
     // pauses mid-sentence without fragmenting a conversation into many short clips.
     private val speechOffsetFrames = 6
 
+    // In Realtime mode: wait this long after the last segment ends before syncing.
+    // Consecutive 60-second segments (from MAX_SPEECH_SEGMENT_SECONDS) all land in
+    // the same performSync() call and therefore in one Omi conversation.
+    private val REALTIME_SYNC_IDLE_MS = 30_000L
+    private var realtimeSyncJob: Job? = null
+
     // Dynamic Conversation Tracking
     private var lastValidSpeechEndTimeMs: Long = 0L
 
@@ -496,10 +502,15 @@ class AudioCaptureService : Service() {
             )
             chunkRepository.saveChunk(chunk)
 
-            // In realtime mode, sync immediately after each completed speech segment
+            // In realtime mode, debounce the sync by 30 s. Consecutive forced-end
+            // segments (MAX_SPEECH_SEGMENT_SECONDS) accumulate on disk; the single
+            // performSync() that fires after 30 s of idle sends them all under one
+            // syncId so the phone can group them into one Omi conversation.
             if (isFinal && prefs.getString(Constants.PREF_STREAM_MODE, Constants.STREAM_MODE_BATCH) == Constants.STREAM_MODE_REALTIME) {
-                serviceScope.launch {
-                    Log.d(TAG, "Realtime sync: segment $currentSegmentId finalized")
+                realtimeSyncJob?.cancel()
+                realtimeSyncJob = serviceScope.launch {
+                    delay(REALTIME_SYNC_IDLE_MS)
+                    Log.d(TAG, "Realtime idle sync: uploading accumulated segments")
                     performSync()
                     lastSyncTimeMs = System.currentTimeMillis()
                     prefs.edit().putLong(Constants.PREF_LAST_SYNC_TIME, lastSyncTimeMs).apply()
