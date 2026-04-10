@@ -12,6 +12,7 @@ import com.omi4wos.mobile.omi.OmiApiClient
 import com.omi4wos.mobile.omi.OmiConfig
 import com.omi4wos.mobile.service.AudioReceiverService
 import com.omi4wos.mobile.service.AudioUploadService
+import com.omi4wos.shared.Constants
 import com.omi4wos.shared.DataLayerPaths
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -29,7 +30,9 @@ data class HomeUiState(
     val watchBatteryLevel: Int = -1,
     val totalUploads: Int = 0,
     val uploadFailures: Int = 0,
-    val recentSyncs: List<SyncSummary> = emptyList()
+    val recentSyncs: List<SyncSummary> = emptyList(),
+    val streamMode: String = Constants.STREAM_MODE_BATCH,
+    val batchIntervalMinutes: Int = Constants.DEFAULT_BATCH_INTERVAL_MINUTES
 )
 
 class HomeViewModel(application: Application) : AndroidViewModel(application) {
@@ -37,6 +40,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     companion object { private const val TAG = "HomeViewModel" }
 
     private val repository = UploadRepository.getInstance(application)
+    private val omiConfig = OmiConfig(application)
     private val messageClient = Wearable.getMessageClient(application)
     private val nodeClient = Wearable.getNodeClient(application)
 
@@ -114,6 +118,15 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                 uploadFailures = failures
             )
         }.launchIn(viewModelScope)
+
+        omiConfig.observeConfig()
+            .onEach { config ->
+                _uiState.value = _uiState.value.copy(
+                    streamMode = config.streamMode,
+                    batchIntervalMinutes = config.batchIntervalMinutes
+                )
+            }
+            .launchIn(viewModelScope)
     }
 
     fun retryPendingUploads() {
@@ -154,6 +167,27 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     /** Sends a force-sync command to the watch — triggers immediate upload of all pending chunks. */
     fun forceSyncWatch() {
         sendWatchCommand(DataLayerPaths.CMD_FORCE_SYNC)
+    }
+
+    fun setStreamMode(mode: String) {
+        viewModelScope.launch {
+            val config = omiConfig.getConfig()
+            omiConfig.saveConfig(config.copy(streamMode = mode))
+            val cmd = if (mode == Constants.STREAM_MODE_REALTIME) {
+                "${DataLayerPaths.CMD_SET_STREAM_MODE}:$mode"
+            } else {
+                "${DataLayerPaths.CMD_SET_STREAM_MODE}:$mode:${config.batchIntervalMinutes}"
+            }
+            sendWatchCommand(cmd)
+        }
+    }
+
+    fun setBatchIntervalMinutes(minutes: Int) {
+        viewModelScope.launch {
+            val config = omiConfig.getConfig()
+            omiConfig.saveConfig(config.copy(batchIntervalMinutes = minutes))
+            sendWatchCommand("${DataLayerPaths.CMD_SET_STREAM_MODE}:${Constants.STREAM_MODE_BATCH}:$minutes")
+        }
     }
 
     fun startWatchRecording() {

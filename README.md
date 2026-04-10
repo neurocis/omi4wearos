@@ -14,8 +14,8 @@ Adapted the original version which performed Android transcription, **this cipio
 If you do not want to compile the code in Android Studio, you can natively download the fully packaged APK files directly from the `/releases` folder in this repository! 
 
 There are precisely two files. Both are required for the framework to function smoothly:
-1. `Omi4wOS_Wear_v1.0.apk` -> Install directly onto your **Watch** (Wear OS) using ADB.
-2. `Omi4wOS_Mobile_v1.0.apk` -> Install directly onto your **Android Phone** so you can securely plug in your private API tokens natively.
+1. `Omi4wOS_Wear_v1.3.apk` -> Install directly onto your **Watch** (Wear OS) using ADB.
+2. `Omi4wOS_Mobile_v1.3.apk` -> Install directly onto your **Android Phone** so you can securely plug in your private API tokens natively.
 
 ## Architecture
 
@@ -89,9 +89,15 @@ To interface perfectly with Omi Cloud natively, this system securely routes thro
 2. **Loudness Gate**: Each 960ms window is checked against a 52dB RMS threshold before any inference runs. Windows below the threshold are skipped entirely, keeping the CPU idle during silence.
 3. **Silero VAD**: An LSTM neural network (Silero) evaluates each window that passes the loudness gate. It classifies 30 × 32ms frames per window and reports a speech probability per frame. Windows with ≥4 frames above 0.5 probability are flagged as speech.
 4. **Local Caching**: Audio containing voice activity is Opus-encoded and immediately serialized to the watch's internal filesystem. This ensures no data is lost if the watch is away from the phone.
-5. **Data Transmission**: Once a sentence concludes, the watch evaluates Bluetooth connectivity. If connected, it batch-transmits all pending payloads across the Wear Data Layer. If disconnected, files are securely retained until a background worker syncs them upon reconnection.
+5. **Data Transmission**: Once a sentence concludes, the watch evaluates Bluetooth connectivity. In **Realtime Stream** mode, the watch immediately transmits the completed segment as soon as it ends. In **Batch Stream** mode (default: 60 minutes, user-configurable), the watch accumulates segments and syncs them on a timed schedule. If disconnected, files are securely retained until a background worker syncs them upon reconnection.
 6. **Phone**: The companion app listens on the Data Layer, assembling the received Opus payloads into an `.bin` archive.
 7. **Cloud Upload**: The phone pushes the compiled `.bin` archive into the Omi Cloud using standard Firebase Authentication tokens.
+
+## What's New in v1.3
+
+- **Realtime Stream Mode**: New sync mode that uploads each completed speech segment to Omi immediately after it ends, minimizing latency between speech and cloud availability. Toggle between Realtime and Batch from the phone companion UI.
+- **Configurable Batch Interval**: Batch Stream mode now exposes a user-adjustable upload interval (5, 10, 15, 30, 60, 90, or 120 minutes) rather than a fixed hourly schedule. The setting is persisted and pushed to the watch automatically.
+- **Force Sync removed in Realtime Mode**: When Realtime Stream is active, the Force Sync button is replaced with a "Realtime Mode" indicator, since per-segment syncing makes manual triggers unnecessary.
 
 ## Key Upgrades from Original Base
 

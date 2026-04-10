@@ -35,11 +35,13 @@ object DataLayerPaths {
     const val CMD_STOP_RECORDING = "stop"
     const val CMD_STATUS_REQUEST = "status_request"
     const val CMD_STATUS_RESPONSE = "status_response"
-    const val CMD_FORCE_SYNC    = "FORCE_SYNC"
-    const val CMD_BATTERY_LEVEL = "BATTERY_LEVEL"
-    const val KEY_BATTERY_LEVEL = "battery_level"
-    const val CMD_SYNC_START    = "SYNC_START"
-    const val KEY_SYNC_ID       = "sync_id"
+    const val CMD_FORCE_SYNC       = "FORCE_SYNC"
+    const val CMD_BATTERY_LEVEL    = "BATTERY_LEVEL"
+    const val KEY_BATTERY_LEVEL    = "battery_level"
+    const val CMD_SYNC_START       = "SYNC_START"
+    const val KEY_SYNC_ID          = "sync_id"
+    // Format: "SET_STREAM_MODE:realtime"  or  "SET_STREAM_MODE:batch:60"  (minutes)
+    const val CMD_SET_STREAM_MODE  = "SET_STREAM_MODE"
 
     // Codec identifiers
     const val CODEC_OPUS = "opus"
