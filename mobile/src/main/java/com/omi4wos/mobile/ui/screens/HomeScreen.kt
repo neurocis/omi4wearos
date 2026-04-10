@@ -141,9 +141,9 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
         // Stream mode card
         StreamModeCard(
             streamMode = uiState.streamMode,
-            batchIntervalMinutes = uiState.batchIntervalMinutes,
+            batchInterval = uiState.batchInterval,
             onModeSelected = { viewModel.setStreamMode(it) },
-            onIntervalSelected = { viewModel.setBatchIntervalMinutes(it) }
+            onIntervalSelected = { viewModel.setBatchInterval(it) }
         )
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -219,14 +219,21 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
     }
 }
 
-private val BATCH_INTERVAL_OPTIONS = listOf(5, 10, 15, 30, 60, 90, 120)
+// Clock-aligned options first, then minute-based intervals
+private val BATCH_INTERVAL_OPTIONS = listOf(":00", ":30", "5", "10", "15", "30", "60", "90", "120")
+
+private fun intervalLabel(interval: String) = when (interval) {
+    Constants.BATCH_CLOCK_HOUR -> ":00"
+    Constants.BATCH_CLOCK_HALF -> ":30"
+    else -> "${interval} min"
+}
 
 @Composable
 private fun StreamModeCard(
     streamMode: String,
-    batchIntervalMinutes: Int,
+    batchInterval: String,
     onModeSelected: (String) -> Unit,
-    onIntervalSelected: (Int) -> Unit
+    onIntervalSelected: (String) -> Unit
 ) {
     val realtimeSelected = streamMode == Constants.STREAM_MODE_REALTIME
     var dropdownExpanded by remember { mutableStateOf(false) }
@@ -278,10 +285,10 @@ private fun StreamModeCard(
                         androidx.compose.foundation.layout.Box {
                             OutlinedButton(
                                 onClick = { dropdownExpanded = true },
-                                modifier = Modifier.width(90.dp)
+                                modifier = Modifier.width(160.dp)
                             ) {
                                 Text(
-                                    text = "$batchIntervalMinutes",
+                                    text = intervalLabel(batchInterval),
                                     style = MaterialTheme.typography.bodySmall
                                 )
                             }
@@ -289,11 +296,11 @@ private fun StreamModeCard(
                                 expanded = dropdownExpanded,
                                 onDismissRequest = { dropdownExpanded = false }
                             ) {
-                                BATCH_INTERVAL_OPTIONS.forEach { minutes ->
+                                BATCH_INTERVAL_OPTIONS.forEach { option ->
                                     DropdownMenuItem(
-                                        text = { Text("$minutes min") },
+                                        text = { Text(intervalLabel(option)) },
                                         onClick = {
-                                            onIntervalSelected(minutes)
+                                            onIntervalSelected(option)
                                             dropdownExpanded = false
                                         }
                                     )

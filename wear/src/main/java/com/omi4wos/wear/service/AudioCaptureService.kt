@@ -33,6 +33,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.util.Calendar
 import java.util.UUID
 
 /**
@@ -52,8 +53,8 @@ class AudioCaptureService : Service() {
         const val ACTION_FORCE_SYNC = "com.omi4wos.wear.ACTION_FORCE_SYNC"
         const val ACTION_SET_STREAM_MODE = "com.omi4wos.wear.ACTION_SET_STREAM_MODE"
 
-        const val EXTRA_STREAM_MODE = "extra_stream_mode"
-        const val EXTRA_BATCH_INTERVAL_MINUTES = "extra_batch_interval_minutes"
+        const val EXTRA_STREAM_MODE    = "extra_stream_mode"
+        const val EXTRA_BATCH_INTERVAL = "extra_batch_interval"
 
         // Observable state for UI
         private val _isRecording = MutableStateFlow(false)
@@ -113,16 +114,25 @@ class AudioCaptureService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
+            null -> {
+                // START_STICKY restart after OS kill — resume recording if it was active before.
+                if (prefs.getBoolean(Constants.PREF_RECORDING_ENABLED, false)) {
+                    Log.i(TAG, "Restarted by OS (intent=null) — resuming recording")
+                    startCapture()
+                } else {
+                    stopSelf()
+                }
+            }
             ACTION_START -> startCapture()
             ACTION_STOP -> stopCapture()
             ACTION_SET_STREAM_MODE -> {
-                val mode = intent.getStringExtra(EXTRA_STREAM_MODE) ?: Constants.STREAM_MODE_BATCH
-                val intervalMinutes = intent.getIntExtra(EXTRA_BATCH_INTERVAL_MINUTES, Constants.DEFAULT_BATCH_INTERVAL_MINUTES)
+                val mode     = intent.getStringExtra(EXTRA_STREAM_MODE)    ?: Constants.STREAM_MODE_BATCH
+                val interval = intent.getStringExtra(EXTRA_BATCH_INTERVAL) ?: Constants.DEFAULT_BATCH_INTERVAL
                 prefs.edit()
-                    .putString(Constants.PREF_STREAM_MODE, mode)
-                    .putInt(Constants.PREF_BATCH_INTERVAL_MINUTES, intervalMinutes)
+                    .putString(Constants.PREF_STREAM_MODE,   mode)
+                    .putString(Constants.PREF_BATCH_INTERVAL, interval)
                     .apply()
-                Log.i(TAG, "Stream mode updated: $mode, interval=${intervalMinutes}min")
+                Log.i(TAG, "Stream mode updated: $mode, interval=$interval")
             }
             ACTION_FORCE_SYNC -> {
                 val wasRecording = _isRecording.value
@@ -150,6 +160,7 @@ class AudioCaptureService : Service() {
         if (_isRecording.value) return
 
         Log.i(TAG, "Starting audio capture")
+        prefs.edit().putBoolean(Constants.PREF_RECORDING_ENABLED, true).apply()
 
         // Start foreground with notification
         val notification = createNotification("Monitoring for speech…")
@@ -185,14 +196,11 @@ class AudioCaptureService : Service() {
                 _isPhoneConnected.value = connected
 
                 if (connected) {
-                    val intervalMs = prefs.getInt(
-                        Constants.PREF_BATCH_INTERVAL_MINUTES,
-                        Constants.DEFAULT_BATCH_INTERVAL_MINUTES
-                    ) * 60_000L
-                    val elapsed = System.currentTimeMillis() - lastSyncTimeMs
-                    if (lastSyncTimeMs == 0L || elapsed >= intervalMs) {
-                        val mode = prefs.getString(Constants.PREF_STREAM_MODE, Constants.STREAM_MODE_BATCH)
-                        Log.i(TAG, "Scheduled sync triggered [$mode] (${elapsed}ms since last sync)")
+                    val interval = prefs.getString(Constants.PREF_BATCH_INTERVAL, Constants.DEFAULT_BATCH_INTERVAL)
+                        ?: Constants.DEFAULT_BATCH_INTERVAL
+                    if (lastSyncTimeMs == 0L || shouldSyncNow(interval, lastSyncTimeMs)) {
+                        val streamMode = prefs.getString(Constants.PREF_STREAM_MODE, Constants.STREAM_MODE_BATCH)
+                        Log.i(TAG, "Scheduled sync triggered [$streamMode / $interval]")
                         performSync()
                         lastSyncTimeMs = System.currentTimeMillis()
                         prefs.edit().putLong(Constants.PREF_LAST_SYNC_TIME, lastSyncTimeMs).apply()
@@ -210,6 +218,7 @@ class AudioCaptureService : Service() {
 
     private fun stopCapture() {
         Log.i(TAG, "Stopping audio capture")
+        prefs.edit().putBoolean(Constants.PREF_RECORDING_ENABLED, false).apply()
 
         // Notify phone that recording has stopped before tearing down the sender
         notifyPhoneRecordingState(false)
@@ -344,6 +353,44 @@ class AudioCaptureService : Service() {
                 Log.d(TAG, "Speech segment too short, discarding: ${duration}ms < ${currentMinDuration}ms")
             }
             speechClassifier.resetState()
+        }
+    }
+
+    /**
+     * Returns true if a scheduled sync should fire now based on the configured interval.
+     *
+     * Minute-based (e.g. "60"): fires when [elapsed since lastSyncMs] >= interval.
+     * Clock-aligned ":00": fires when we have passed an xx:00:00 boundary since lastSyncMs.
+     * Clock-aligned ":30": fires when we have passed an xx:00:00 or xx:30:00 boundary since lastSyncMs.
+     *
+     * Clock-aligned syncs are evaluated against the most recently passed boundary on the
+     * clock, so the actual upload happens within one connectivity-poll window (2 min) of
+     * the boundary — a natural gap between back-to-back meetings.
+     */
+    private fun shouldSyncNow(interval: String, lastSyncMs: Long): Boolean {
+        return when (interval) {
+            Constants.BATCH_CLOCK_HOUR, Constants.BATCH_CLOCK_HALF -> {
+                val now = Calendar.getInstance()
+                val minute = now.get(Calendar.MINUTE)
+
+                // Find the most recent :00 or :30 boundary that has already passed
+                val boundaryMinute = when (interval) {
+                    Constants.BATCH_CLOCK_HALF -> if (minute >= 30) 30 else 0
+                    else -> 0  // BATCH_CLOCK_HOUR
+                }
+
+                val boundary = (now.clone() as Calendar).apply {
+                    set(Calendar.MINUTE, boundaryMinute)
+                    set(Calendar.SECOND, 0)
+                    set(Calendar.MILLISECOND, 0)
+                }
+                // Sync if we haven't synced since the most recently passed boundary
+                lastSyncMs < boundary.timeInMillis
+            }
+            else -> {
+                val intervalMs = (interval.toLongOrNull() ?: 60L) * 60_000L
+                (System.currentTimeMillis() - lastSyncMs) >= intervalMs
+            }
         }
     }
 
