@@ -40,6 +40,13 @@ object Constants {
     const val PREF_LAST_SYNC_TIME     = "last_sync_time_ms"
     const val PREFS_NAME              = "omi4wos_wear_prefs"
 
+    // Stream mode
+    const val STREAM_MODE_REALTIME          = "realtime"
+    const val STREAM_MODE_BATCH             = "batch"
+    const val PREF_STREAM_MODE              = "stream_mode"
+    const val PREF_BATCH_INTERVAL_MINUTES   = "batch_interval_minutes"
+    const val DEFAULT_BATCH_INTERVAL_MINUTES = 60
+
     // Opus encoder parameters
     const val OPUS_BITRATE = 24000 // 24 kbps - good for speech
     const val OPUS_FRAME_SIZE_MS = 20 // 20ms frames

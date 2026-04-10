@@ -50,6 +50,10 @@ class AudioCaptureService : Service() {
         const val ACTION_START = "com.omi4wos.wear.ACTION_START"
         const val ACTION_STOP = "com.omi4wos.wear.ACTION_STOP"
         const val ACTION_FORCE_SYNC = "com.omi4wos.wear.ACTION_FORCE_SYNC"
+        const val ACTION_SET_STREAM_MODE = "com.omi4wos.wear.ACTION_SET_STREAM_MODE"
+
+        const val EXTRA_STREAM_MODE = "extra_stream_mode"
+        const val EXTRA_BATCH_INTERVAL_MINUTES = "extra_batch_interval_minutes"
 
         // Observable state for UI
         private val _isRecording = MutableStateFlow(false)
@@ -111,6 +115,15 @@ class AudioCaptureService : Service() {
         when (intent?.action) {
             ACTION_START -> startCapture()
             ACTION_STOP -> stopCapture()
+            ACTION_SET_STREAM_MODE -> {
+                val mode = intent.getStringExtra(EXTRA_STREAM_MODE) ?: Constants.STREAM_MODE_BATCH
+                val intervalMinutes = intent.getIntExtra(EXTRA_BATCH_INTERVAL_MINUTES, Constants.DEFAULT_BATCH_INTERVAL_MINUTES)
+                prefs.edit()
+                    .putString(Constants.PREF_STREAM_MODE, mode)
+                    .putInt(Constants.PREF_BATCH_INTERVAL_MINUTES, intervalMinutes)
+                    .apply()
+                Log.i(TAG, "Stream mode updated: $mode, interval=${intervalMinutes}min")
+            }
             ACTION_FORCE_SYNC -> {
                 val wasRecording = _isRecording.value
                 if (!wasRecording) {
@@ -163,7 +176,8 @@ class AudioCaptureService : Service() {
         // Notify phone that recording has started
         notifyPhoneRecordingState(true)
 
-        // Hourly sync loop: check connectivity every 2 min, sync if ≥1 hour since last sync
+        // Scheduled sync loop: check connectivity every 2 min, sync on configured interval.
+        // In realtime mode, per-segment syncs handle most uploads; this loop is a safety-net fallback.
         serviceScope.launch {
             while (isActive) {
                 dataLayerSender.checkConnectivity()
@@ -171,9 +185,14 @@ class AudioCaptureService : Service() {
                 _isPhoneConnected.value = connected
 
                 if (connected) {
+                    val intervalMs = prefs.getInt(
+                        Constants.PREF_BATCH_INTERVAL_MINUTES,
+                        Constants.DEFAULT_BATCH_INTERVAL_MINUTES
+                    ) * 60_000L
                     val elapsed = System.currentTimeMillis() - lastSyncTimeMs
-                    if (lastSyncTimeMs == 0L || elapsed >= Constants.HOURLY_SYNC_INTERVAL_MS) {
-                        Log.i(TAG, "Hourly sync triggered (${elapsed}ms since last sync)")
+                    if (lastSyncTimeMs == 0L || elapsed >= intervalMs) {
+                        val mode = prefs.getString(Constants.PREF_STREAM_MODE, Constants.STREAM_MODE_BATCH)
+                        Log.i(TAG, "Scheduled sync triggered [$mode] (${elapsed}ms since last sync)")
                         performSync()
                         lastSyncTimeMs = System.currentTimeMillis()
                         prefs.edit().putLong(Constants.PREF_LAST_SYNC_TIME, lastSyncTimeMs).apply()
@@ -423,7 +442,16 @@ class AudioCaptureService : Service() {
                 isFinal = isFinal
             )
             chunkRepository.saveChunk(chunk)
-            // Chunks are now synced on the hourly schedule, not per-segment
+
+            // In realtime mode, sync immediately after each completed speech segment
+            if (isFinal && prefs.getString(Constants.PREF_STREAM_MODE, Constants.STREAM_MODE_BATCH) == Constants.STREAM_MODE_REALTIME) {
+                serviceScope.launch {
+                    Log.d(TAG, "Realtime sync: segment $currentSegmentId finalized")
+                    performSync()
+                    lastSyncTimeMs = System.currentTimeMillis()
+                    prefs.edit().putLong(Constants.PREF_LAST_SYNC_TIME, lastSyncTimeMs).apply()
+                }
+            }
         }
     }
 

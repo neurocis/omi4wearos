@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -25,7 +26,9 @@ class OmiConfig(private val context: Context) {
         val firebaseToken: String = "",
         val firebaseRefreshToken: String = "",
         val firebaseWebApiKey: String = "",
-        val firebaseTokenExpiresAt: Long = 0L
+        val firebaseTokenExpiresAt: Long = 0L,
+        val streamMode: String = Constants.STREAM_MODE_BATCH,
+        val batchIntervalMinutes: Int = Constants.DEFAULT_BATCH_INTERVAL_MINUTES
     ) {
         val isConfigured: Boolean
             get() = firebaseToken.isNotBlank() || (apiKey.isNotBlank() && appId.isNotBlank() && userId.isNotBlank())
@@ -39,6 +42,8 @@ class OmiConfig(private val context: Context) {
         private val KEY_FIREBASE_REFRESH_TOKEN = stringPreferencesKey("omi_firebase_refresh_token")
         private val KEY_FIREBASE_WEB_API_KEY = stringPreferencesKey("omi_firebase_web_api_key")
         private val KEY_FIREBASE_TOKEN_EXPIRES_AT = longPreferencesKey("omi_firebase_token_expires_at")
+        private val KEY_STREAM_MODE = stringPreferencesKey(Constants.PREF_STREAM_MODE)
+        private val KEY_BATCH_INTERVAL_MINUTES = intPreferencesKey(Constants.PREF_BATCH_INTERVAL_MINUTES)
     }
 
     /**
@@ -53,7 +58,9 @@ class OmiConfig(private val context: Context) {
                 firebaseToken = prefs[KEY_FIREBASE_TOKEN] ?: "",
                 firebaseRefreshToken = prefs[KEY_FIREBASE_REFRESH_TOKEN] ?: "",
                 firebaseWebApiKey = prefs[KEY_FIREBASE_WEB_API_KEY] ?: "",
-                firebaseTokenExpiresAt = prefs[KEY_FIREBASE_TOKEN_EXPIRES_AT] ?: 0L
+                firebaseTokenExpiresAt = prefs[KEY_FIREBASE_TOKEN_EXPIRES_AT] ?: 0L,
+                streamMode = prefs[KEY_STREAM_MODE] ?: Constants.STREAM_MODE_BATCH,
+                batchIntervalMinutes = prefs[KEY_BATCH_INTERVAL_MINUTES] ?: Constants.DEFAULT_BATCH_INTERVAL_MINUTES
             )
         }.first()
     }
@@ -70,6 +77,8 @@ class OmiConfig(private val context: Context) {
             prefs[KEY_FIREBASE_REFRESH_TOKEN] = config.firebaseRefreshToken
             prefs[KEY_FIREBASE_WEB_API_KEY] = config.firebaseWebApiKey
             prefs[KEY_FIREBASE_TOKEN_EXPIRES_AT] = config.firebaseTokenExpiresAt
+            prefs[KEY_STREAM_MODE] = config.streamMode
+            prefs[KEY_BATCH_INTERVAL_MINUTES] = config.batchIntervalMinutes
         }
     }
 
@@ -84,7 +93,9 @@ class OmiConfig(private val context: Context) {
             firebaseToken = prefs[KEY_FIREBASE_TOKEN] ?: "",
             firebaseRefreshToken = prefs[KEY_FIREBASE_REFRESH_TOKEN] ?: "",
             firebaseWebApiKey = prefs[KEY_FIREBASE_WEB_API_KEY] ?: "",
-            firebaseTokenExpiresAt = prefs[KEY_FIREBASE_TOKEN_EXPIRES_AT] ?: 0L
+            firebaseTokenExpiresAt = prefs[KEY_FIREBASE_TOKEN_EXPIRES_AT] ?: 0L,
+            streamMode = prefs[KEY_STREAM_MODE] ?: Constants.STREAM_MODE_BATCH,
+            batchIntervalMinutes = prefs[KEY_BATCH_INTERVAL_MINUTES] ?: Constants.DEFAULT_BATCH_INTERVAL_MINUTES
         )
     }
 

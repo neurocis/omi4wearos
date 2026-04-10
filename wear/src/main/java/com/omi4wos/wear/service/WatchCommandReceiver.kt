@@ -24,6 +24,7 @@ import java.io.DataOutputStream
  *  - CMD_STOP_RECORDING   → stops AudioCaptureService
  *  - CMD_FORCE_SYNC       → triggers immediate sync via ACTION_FORCE_SYNC (does NOT reset hourly timer)
  *  - CMD_STATUS_REQUEST   → replies with current recording state to phone
+ *  - CMD_SET_STREAM_MODE  → updates stream mode + batch interval on the watch
  */
 class WatchCommandReceiver : WearableListenerService() {
 
@@ -71,6 +72,25 @@ class WatchCommandReceiver : WearableListenerService() {
                 // Reply with the current recording state so the phone UI stays in sync
                 val isRecording = AudioCaptureService.isRecording.value
                 scope.launch { sendStatusResponse(messageEvent.sourceNodeId, isRecording) }
+            }
+            else -> {
+                // SET_STREAM_MODE:realtime  or  SET_STREAM_MODE:batch:60
+                if (command.startsWith(DataLayerPaths.CMD_SET_STREAM_MODE + ":")) {
+                    val parts = command.split(":")
+                    val mode = parts.getOrNull(1) ?: return
+                    val intervalMinutes = parts.getOrNull(2)?.toIntOrNull()
+                    startService(
+                        Intent(this, AudioCaptureService::class.java).apply {
+                            action = AudioCaptureService.ACTION_SET_STREAM_MODE
+                            putExtra(AudioCaptureService.EXTRA_STREAM_MODE, mode)
+                            if (intervalMinutes != null) {
+                                putExtra(AudioCaptureService.EXTRA_BATCH_INTERVAL_MINUTES, intervalMinutes)
+                            }
+                        }
+                    )
+                } else {
+                    Log.w(TAG, "Unknown command: $command")
+                }
             }
         }
     }

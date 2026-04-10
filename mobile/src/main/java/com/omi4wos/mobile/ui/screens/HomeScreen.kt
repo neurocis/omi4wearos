@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.Sync
@@ -22,6 +23,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -30,6 +33,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -39,6 +45,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.omi4wos.mobile.data.SyncSummary
 import com.omi4wos.mobile.viewmodel.HomeViewModel
+import com.omi4wos.shared.Constants
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -131,7 +138,17 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // [Retry icon] Upload Failures: N          [Force Sync]
+        // Stream mode card
+        StreamModeCard(
+            streamMode = uiState.streamMode,
+            batchIntervalMinutes = uiState.batchIntervalMinutes,
+            onModeSelected = { viewModel.setStreamMode(it) },
+            onIntervalSelected = { viewModel.setBatchIntervalMinutes(it) }
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // [Retry icon] Upload Failures: N          [Force Sync] or [● Realtime]
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -158,8 +175,28 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
                             else MaterialTheme.colorScheme.onSurface
                 )
             }
-            OutlinedButton(onClick = { viewModel.forceSyncWatch() }) {
-                Text("Force Sync")
+            if (uiState.streamMode == Constants.STREAM_MODE_REALTIME) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.FiberManualRecord,
+                        contentDescription = null,
+                        tint = Color(0xFFE53935),
+                        modifier = Modifier.size(10.dp)
+                    )
+                    Text(
+                        text = "Realtime Mode",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color(0xFFE53935),
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            } else {
+                OutlinedButton(onClick = { viewModel.forceSyncWatch() }) {
+                    Text("Force Sync")
+                }
             }
         }
 
@@ -176,6 +213,94 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
                 items(uiState.recentSyncs) { sync ->
                     SyncCard(sync)
                     Spacer(modifier = Modifier.height(8.dp))
+                }
+            }
+        }
+    }
+}
+
+private val BATCH_INTERVAL_OPTIONS = listOf(5, 10, 15, 30, 60, 90, 120)
+
+@Composable
+private fun StreamModeCard(
+    streamMode: String,
+    batchIntervalMinutes: Int,
+    onModeSelected: (String) -> Unit,
+    onIntervalSelected: (Int) -> Unit
+) {
+    val realtimeSelected = streamMode == Constants.STREAM_MODE_REALTIME
+    var dropdownExpanded by remember { mutableStateOf(false) }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text(
+                text = "Sync Mode",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Row(
+                verticalAlignment = Alignment.Bottom,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    onClick = { onModeSelected(Constants.STREAM_MODE_REALTIME) },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (realtimeSelected) Color(0xFFE53935)
+                                         else MaterialTheme.colorScheme.surface,
+                        contentColor = if (realtimeSelected) Color.White
+                                       else MaterialTheme.colorScheme.onSurface
+                    )
+                ) {
+                    Text("Realtime Stream", style = MaterialTheme.typography.bodySmall)
+                }
+                Button(
+                    onClick = { onModeSelected(Constants.STREAM_MODE_BATCH) },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (!realtimeSelected) MaterialTheme.colorScheme.primary
+                                         else MaterialTheme.colorScheme.surface,
+                        contentColor = if (!realtimeSelected) MaterialTheme.colorScheme.onPrimary
+                                       else MaterialTheme.colorScheme.onSurface
+                    )
+                ) {
+                    Text("Batch Stream", style = MaterialTheme.typography.bodySmall)
+                }
+                if (!realtimeSelected) {
+                    Column {
+                        Text(
+                            text = "Interval (min)",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        androidx.compose.foundation.layout.Box {
+                            OutlinedButton(
+                                onClick = { dropdownExpanded = true },
+                                modifier = Modifier.width(90.dp)
+                            ) {
+                                Text(
+                                    text = "$batchIntervalMinutes",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = dropdownExpanded,
+                                onDismissRequest = { dropdownExpanded = false }
+                            ) {
+                                BATCH_INTERVAL_OPTIONS.forEach { minutes ->
+                                    DropdownMenuItem(
+                                        text = { Text("$minutes min") },
+                                        onClick = {
+                                            onIntervalSelected(minutes)
+                                            dropdownExpanded = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
