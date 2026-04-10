@@ -88,10 +88,13 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
                     painter = painterResource(R.drawable.ic_launcher_foreground),
                     contentDescription = null,
                     tint = if (uiState.watchConnected) Color(0xFF4CAF50) else Color(0xFF757575),
-                    modifier = Modifier.size(32.dp)
+                    modifier = Modifier.size(96.dp)
                 )
                 Spacer(modifier = Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.Center
+                ) {
                     Text(
                         text = if (uiState.watchConnected) "Watch Connected" else "Watch Disconnected",
                         style = MaterialTheme.typography.titleMedium,
