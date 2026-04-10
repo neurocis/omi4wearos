@@ -396,8 +396,8 @@ class AudioCaptureService : Service() {
 
     /**
      * Sends a SYNC_START control message (with syncId + battery), transfers all pending
-     * chunks to the phone, then returns. The syncId lets the phone group all segments
-     * from this transfer into a single log entry.
+     * chunks to the phone, then sends SYNC_END so the phone knows to flush its batch buffer.
+     * The syncId lets the phone group all segments from this transfer into one upload.
      */
     private suspend fun performSync() {
         val syncId = java.util.UUID.randomUUID().toString().take(8)
@@ -412,6 +412,9 @@ class AudioCaptureService : Service() {
         Log.i(TAG, "Sync start: $syncId battery=$battery%")
 
         syncPendingChunks()
+
+        dataLayerSender.sendControlMessage(DataLayerPaths.CMD_SYNC_END, mapOf(DataLayerPaths.KEY_SYNC_ID to syncId))
+        Log.i(TAG, "Sync end: $syncId")
     }
 
     private suspend fun syncPendingChunks() {

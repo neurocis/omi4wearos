@@ -29,8 +29,8 @@ class OmiApiClient {
 
     private val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
-        .writeTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(120, TimeUnit.SECONDS)
+        .writeTimeout(120, TimeUnit.SECONDS)
         .addInterceptor(
             HttpLoggingInterceptor().apply {
                 level = HttpLoggingInterceptor.Level.BODY
@@ -176,6 +176,59 @@ class OmiApiClient {
             }
         } catch (e: Exception) {
             Log.e(TAG, "Audio sync exception", e)
+            null
+        }
+    }
+
+    /**
+     * Upload multiple .bin files in a single multipart POST to /v2/sync-local-files.
+     * Used in batch mode so all segments from one sync session become one Omi job,
+     * preventing the backend from fragmenting them into separate conversations.
+     *
+     * @param firebaseToken Valid Firebase ID token
+     * @param files List of (File, uploadName) pairs — all files are added as "files" parts
+     * @return Raw JSON response string, or null on failure
+     */
+    suspend fun uploadAudioBatch(
+        firebaseToken: String,
+        files: List<Pair<File, String>>
+    ): String? = withContext(Dispatchers.IO) {
+        if (files.isEmpty()) return@withContext null
+        try {
+            val url = "https://api.omi.me/v2/sync-local-files"
+
+            val builder = MultipartBody.Builder().setType(MultipartBody.FORM)
+            for ((file, uploadName) in files) {
+                builder.addFormDataPart(
+                    "files",
+                    uploadName,
+                    file.asRequestBody("application/octet-stream".toMediaType())
+                )
+            }
+
+            val request = Request.Builder()
+                .url(url)
+                .header("Authorization", "Bearer $firebaseToken")
+                .post(builder.build())
+                .build()
+
+            Log.d(TAG, "Batch uploading ${files.size} .bin file(s) to Omi")
+
+            val response = client.newCall(request).execute()
+            val success  = response.isSuccessful
+            val body     = response.body?.string()
+            val code     = response.code
+            response.close()
+
+            if (success) {
+                Log.i(TAG, "Batch audio sync accepted ($code): $body")
+                body
+            } else {
+                Log.w(TAG, "Batch audio sync failed ($code): $body")
+                null
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Batch audio sync exception", e)
             null
         }
     }
