@@ -40,13 +40,15 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.wear.compose.material.Button
 import androidx.wear.compose.material.ButtonDefaults
+import androidx.wear.compose.material.Chip
+import androidx.wear.compose.material.ChipDefaults
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
 import androidx.wear.compose.material.TimeText
 import com.omi4wos.wear.service.AudioCaptureService
 
 @Composable
-fun HomeScreen() {
+fun HomeScreen(onAboutClick: () -> Unit = {}) {
     val context = LocalContext.current
     val isRecording by AudioCaptureService.isRecording.collectAsState()
     val isSpeechDetected by AudioCaptureService.isSpeechDetected.collectAsState()
@@ -142,6 +144,23 @@ fun HomeScreen() {
                     style = MaterialTheme.typography.button
                 )
             }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // About chip — tap to see attribution + license info
+            Chip(
+                onClick = onAboutClick,
+                colors = ChipDefaults.chipColors(
+                    backgroundColor = MaterialTheme.colors.surface.copy(alpha = 0.4f)
+                ),
+                label = {
+                    Text(
+                        text = "About",
+                        style = MaterialTheme.typography.caption2,
+                        color = MaterialTheme.colors.onSurface.copy(alpha = 0.5f)
+                    )
+                }
+            )
         }
     }
 }
