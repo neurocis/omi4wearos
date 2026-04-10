@@ -5,28 +5,25 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 
-/**
- * Room database for storing speech transcripts.
- */
 @Database(
-    entities = [TranscriptEntity::class],
-    version = 1,
+    entities = [UploadRecord::class],
+    version = 3,
     exportSchema = false
 )
-abstract class TranscriptDatabase : RoomDatabase() {
+abstract class UploadDatabase : RoomDatabase() {
 
-    abstract fun transcriptDao(): TranscriptDao
+    abstract fun uploadDao(): UploadDao
 
     companion object {
         @Volatile
-        private var INSTANCE: TranscriptDatabase? = null
+        private var INSTANCE: UploadDatabase? = null
 
-        fun getInstance(context: Context): TranscriptDatabase {
+        fun getInstance(context: Context): UploadDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
                     context.applicationContext,
-                    TranscriptDatabase::class.java,
-                    "omi4wos_transcripts.db"
+                    UploadDatabase::class.java,
+                    "omi4wos_uploads.db"
                 )
                     .fallbackToDestructiveMigration()
                     .build()

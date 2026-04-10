@@ -51,6 +51,19 @@
             android:exported="false"
             android:foregroundServiceType="microphone" />
 
+        <!-- Receives start/stop/force-sync commands from the phone companion app -->
+        <service
+            android:name=".service.WatchCommandReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
+                <data
+                    android:host="*"
+                    android:pathPrefix="/audio/control"
+                    android:scheme="wear" />
+            </intent-filter>
+        </service>
+
         <!-- Tile Service -->
         <service
             android:name=".tile.Omi4wosTileService"

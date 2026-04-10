@@ -13,13 +13,19 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MicOff
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Watch
 import androidx.compose.material.icons.filled.WatchOff
-import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -27,19 +33,18 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.omi4wos.mobile.data.SyncSummary
 import com.omi4wos.mobile.viewmodel.HomeViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
 @Composable
-fun HomeScreen(
-    viewModel: HomeViewModel = viewModel()
-) {
+fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
     val uiState by viewModel.uiState.collectAsState()
 
     Column(
@@ -47,7 +52,6 @@ fun HomeScreen(
             .fillMaxSize()
             .padding(16.dp)
     ) {
-        // Header
         Text(
             text = "omi4wOS - cipioh version",
             style = MaterialTheme.typography.headlineMedium,
@@ -57,7 +61,7 @@ fun HomeScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Watch connection status card
+        // Watch connection card
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(
@@ -74,81 +78,103 @@ fun HomeScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
-                    imageVector = if (uiState.watchConnected)
-                        Icons.Default.Watch else Icons.Default.WatchOff,
+                    imageVector = if (uiState.watchConnected) Icons.Default.Watch else Icons.Default.WatchOff,
                     contentDescription = null,
-                    tint = if (uiState.watchConnected)
-                        Color(0xFF4CAF50) else Color(0xFF757575),
+                    tint = if (uiState.watchConnected) Color(0xFF4CAF50) else Color(0xFF757575),
                     modifier = Modifier.size(32.dp)
                 )
                 Spacer(modifier = Modifier.width(12.dp))
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = if (uiState.watchConnected) "Watch Connected" else "Watch Disconnected",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold
                     )
+                    // Always reserve space; color hides it when inactive so the card stays the same height
                     Text(
-                        text = "Receiving audio...",
+                        text = "Receiving audio…",
                         style = MaterialTheme.typography.bodySmall,
-                        color = if (uiState.watchConnected && uiState.isRecording) Color(0xFF4CAF50) else Color.Transparent
+                        color = if (uiState.watchConnected && uiState.isReceivingAudio)
+                            Color(0xFF4CAF50) else Color.Transparent
                     )
+                    if (uiState.watchBatteryLevel >= 0) {
+                        Text(
+                            text = "Battery: ${uiState.watchBatteryLevel}%",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                if (uiState.watchConnected) {
+                    Button(
+                        onClick = {
+                            if (uiState.watchRecordingEnabled) viewModel.stopWatchRecording()
+                            else viewModel.startWatchRecording()
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (uiState.watchRecordingEnabled)
+                                Color(0xFFB71C1C) else Color(0xFF1B5E20)
+                        ),
+                        modifier = Modifier.padding(start = 8.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (uiState.watchRecordingEnabled) Icons.Default.MicOff else Icons.Default.Mic,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(if (uiState.watchRecordingEnabled) "Stop" else "Start")
+                    }
                 }
             }
         }
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Stats row
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly
-        ) {
-            StatCard("Segments", uiState.totalTranscripts.toString())
-            StatCard("Uploaded", uiState.totalUploaded.toString())
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Recent Uploads Header
+        // [Retry icon] Upload Failures: N          [Force Sync]
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = "Recent Uploads",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
-            )
-            androidx.compose.material3.IconButton(
-                onClick = { viewModel.retryPendingUploads() },
-                modifier = Modifier.size(24.dp)
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    imageVector = Icons.Default.Sync,
-                    contentDescription = "Retry pending",
-                    tint = MaterialTheme.colorScheme.primary
+                IconButton(
+                    onClick = { viewModel.retryPendingUploads() },
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Sync,
+                        contentDescription = "Retry failed uploads",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+                Text(
+                    text = "Upload Failures: ${uiState.uploadFailures}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (uiState.uploadFailures > 0) Color(0xFFFFA000)
+                            else MaterialTheme.colorScheme.onSurface
                 )
+            }
+            OutlinedButton(onClick = { viewModel.forceSyncWatch() }) {
+                Text("Force Sync")
             }
         }
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        if (uiState.recentTranscripts.isEmpty()) {
+        if (uiState.recentSyncs.isEmpty()) {
             Text(
-                text = "No uploads yet. Uploads will appear here when the watch detects speech.",
+                text = "No syncs yet. Uploads will appear here after the watch syncs.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         } else {
             LazyColumn {
-                items(uiState.recentTranscripts) { transcript ->
-                    TranscriptCard(
-                        text = transcript.text,
-                        timestamp = transcript.timestamp,
-                        uploaded = transcript.uploadedToOmi
-                    )
+                items(uiState.recentSyncs) { sync ->
+                    SyncCard(sync)
                     Spacer(modifier = Modifier.height(8.dp))
                 }
             }
@@ -157,74 +183,56 @@ fun HomeScreen(
 }
 
 @Composable
-private fun StatCard(label: String, value: String) {
+private fun SyncCard(sync: SyncSummary) {
+    val dateFmt = SimpleDateFormat("MM/dd/yy hh:mma", Locale.getDefault())
+    val timeFmt = SimpleDateFormat("hh:mma", Locale.getDefault())
+
+    val allUploaded = sync.failedCount == 0
+    val statusText = if (allUploaded) "✓ Uploaded" else "⏳ ${sync.failedCount} failed"
+    val statusColor = if (allUploaded) Color(0xFF4CAF50) else Color(0xFFFFA000)
+
+    val batteryStr = if (sync.batteryLevel >= 0) "${sync.batteryLevel}%" else "?%"
+    val sizeStr = formatSize(sync.totalBytes)
+    val segStr = if (sync.segmentCount == 1) "1 segment" else "${sync.segmentCount} segments"
+
     Card(
-        modifier = Modifier.width(100.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
-        )
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "${timeFmt.format(Date(sync.syncTime))}  |  Watch Battery: $batteryStr",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = statusText,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = statusColor
+                )
+            }
+            Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = value,
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary
+                text = "Uploaded to Omi Cloud: $sizeStr  ($segStr)",
+                style = MaterialTheme.typography.bodySmall,
+                fontFamily = FontFamily.Monospace
             )
             Text(
-                text = label,
-                style = MaterialTheme.typography.labelSmall,
+                text = "Spanning ${dateFmt.format(Date(sync.earliestMs))} to ${dateFmt.format(Date(sync.latestMs))}",
+                style = MaterialTheme.typography.bodySmall,
+                fontFamily = FontFamily.Monospace,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }
 }
 
-@Composable
-private fun TranscriptCard(
-    text: String,
-    timestamp: Long,
-    uploaded: Boolean
-) {
-    val dateFormat = SimpleDateFormat("HH:mm:ss", Locale.getDefault())
-    val timeStr = dateFormat.format(Date(timestamp))
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        )
-    ) {
-        Column(
-            modifier = Modifier.padding(12.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = timeStr,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    text = if (uploaded) "✓ Uploaded" else "⏳ Pending",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (uploaded) Color(0xFF4CAF50) else Color(0xFFFFA000)
-                )
-            }
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(
-                text = text,
-                style = MaterialTheme.typography.bodyMedium,
-                maxLines = 4,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-    }
+private fun formatSize(bytes: Long): String = when {
+    bytes < 1024L      -> "$bytes B"
+    bytes < 1_048_576L -> "${"%.1f".format(bytes / 1024.0)} KB"
+    else               -> "${"%.1f".format(bytes / 1_048_576.0)} MB"
 }
