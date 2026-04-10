@@ -39,6 +39,7 @@ object DataLayerPaths {
     const val CMD_BATTERY_LEVEL    = "BATTERY_LEVEL"
     const val KEY_BATTERY_LEVEL    = "battery_level"
     const val CMD_SYNC_START       = "SYNC_START"
+    const val CMD_SYNC_END         = "SYNC_END"
     const val KEY_SYNC_ID          = "sync_id"
     // Format: "SET_STREAM_MODE:realtime"  or  "SET_STREAM_MODE:batch:60"  (minutes)
     const val CMD_SET_STREAM_MODE  = "SET_STREAM_MODE"

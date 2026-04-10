@@ -12,8 +12,8 @@ android {
         applicationId = "com.omi4wos"
         minSdk = 30
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 5
+        versionName = "1.5.0"
     }
 
     buildTypes {

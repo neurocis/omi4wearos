@@ -76,7 +76,7 @@ class AudioReceiverService : WearableListenerService() {
             Log.d(TAG, "processMessage: path=$path size=${data.size}")
             when {
                 path.startsWith(DataLayerPaths.AUDIO_SPEECH_PATH) -> handleAudioData(context, data)
-                path == DataLayerPaths.AUDIO_CONTROL_PATH -> handleControlData(data)
+                path == DataLayerPaths.AUDIO_CONTROL_PATH -> handleControlData(context, data)
             }
         }
 
@@ -120,7 +120,7 @@ class AudioReceiverService : WearableListenerService() {
             }
         }
 
-        private fun handleControlData(data: ByteArray) {
+        private fun handleControlData(context: Context, data: ByteArray) {
             try {
                 val dis = DataInputStream(ByteArrayInputStream(data))
                 val command = dis.readUTF()
@@ -146,6 +146,19 @@ class AudioReceiverService : WearableListenerService() {
                             _watchBatteryLevel.value = it
                         }
                         Log.i(TAG, "Sync session started: $currentSyncId battery=${_watchBatteryLevel.value}%")
+                    }
+                    DataLayerPaths.CMD_SYNC_END -> {
+                        val count = dis.readInt()
+                        val extras = buildMap<String, String> {
+                            repeat(count) { put(dis.readUTF(), dis.readUTF()) }
+                        }
+                        val syncId = extras[DataLayerPaths.KEY_SYNC_ID] ?: currentSyncId
+                        Log.i(TAG, "Sync session ended: $syncId — triggering batch upload flush")
+                        val intent = Intent(context, AudioUploadService::class.java).apply {
+                            action = AudioUploadService.ACTION_FLUSH_SYNC
+                            putExtra(AudioUploadService.EXTRA_SYNC_ID, syncId)
+                        }
+                        context.startService(intent)
                     }
                     DataLayerPaths.CMD_STATUS_RESPONSE -> {
                         val count = dis.readInt()

@@ -1,5 +1,24 @@
 # Changelog
 
+## v1.5 — 2026-04-10
+
+### Mobile (`Omi4wOS_Mobile_v1.5.apk`)
+
+**Fixed**
+- Conversation fragmentation in batch mode: segments from the same sync session were each uploaded as independent Omi jobs, causing one hour of audio to appear as dozens of separate conversations in the app. Batch mode now buffers all segments for a sync session and flushes them as a single multipart `POST /v2/sync-local-files` when the session ends, matching how the Omi pendant itself uploads.
+
+**New**
+- Temporal session grouping: within a batch flush, segments separated by more than 5 minutes are split into separate uploads (genuinely different conversations), matching the gap-detection logic used by `sync_omi_cloud.py`.
+
+---
+
+### Wear (`Omi4wOS_Wear_v1.5.apk`)
+
+**New**
+- Sends `CMD_SYNC_END` after `syncPendingChunks()` completes, signaling the phone to flush its batch buffer. Previously the phone had no way to know when a sync session was finished.
+
+---
+
 ## v1.4 — 2026-04-10
 
 ### Mobile (`Omi4wOS_Mobile_v1.4.apk`)
