@@ -4,14 +4,6 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -35,7 +27,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
@@ -52,7 +43,6 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.wear.compose.material.Icon
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
-import androidx.wear.compose.material.TimeText
 import com.omi4wos.wear.R
 import com.omi4wos.wear.service.AudioCaptureService
 
@@ -92,42 +82,14 @@ fun HomeScreen(onAboutClick: () -> Unit = {}) {
     }
 
     // ── Derived state ──────────────────────────────────────────────────────
-    val buttonColor by animateColorAsState(
-        targetValue = when {
-            !hasPermission   -> ColorNoPerms
-            isSpeechDetected -> ColorSpeech
-            isRecording      -> ColorListen
-            else             -> ColorIdle
-        },
-        animationSpec = tween(400),
-        label = "button_color"
-    )
+    val buttonColor = when {
+        !hasPermission   -> ColorNoPerms
+        isSpeechDetected -> ColorSpeech
+        isRecording      -> ColorListen
+        else             -> ColorIdle
+    }
 
-    // Halo fades in when recording starts
-    val haloAlpha by animateFloatAsState(
-        targetValue = if (isRecording) 0.20f else 0f,
-        animationSpec = tween(600),
-        label = "halo_alpha"
-    )
-
-    // Pulse: fast + strong during speech, slow + subtle while listening, still at idle
-    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
-    val pulseScale by infiniteTransition.animateFloat(
-        initialValue = 1.0f,
-        targetValue  = when {
-            isSpeechDetected -> 1.18f
-            isRecording      -> 1.06f
-            else             -> 1.00f
-        },
-        animationSpec = infiniteRepeatable(
-            animation = tween(
-                durationMillis = if (isSpeechDetected) 380 else 900,
-                easing = FastOutSlowInEasing
-            ),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "pulse_scale"
-    )
+    val haloAlpha = if (isRecording) 0.20f else 0f
 
     // ── Layout ─────────────────────────────────────────────────────────────
     Box(
@@ -136,8 +98,6 @@ fun HomeScreen(onAboutClick: () -> Unit = {}) {
             .background(MaterialTheme.colors.background),
         contentAlignment = Alignment.Center
     ) {
-        TimeText()
-
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -157,11 +117,10 @@ fun HomeScreen(onAboutClick: () -> Unit = {}) {
                         .background(buttonColor.copy(alpha = haloAlpha), CircleShape)
                 )
 
-                // Main button — pulsing circle with mic icon
+                // Main button — circle with mic icon
                 Box(
                     modifier = Modifier
                         .size(72.dp)
-                        .scale(pulseScale)
                         .background(buttonColor, CircleShape)
                         .clickable(
                             indication = null,

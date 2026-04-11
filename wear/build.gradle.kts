@@ -12,17 +12,18 @@ android {
         applicationId = "com.omi4wos"
         minSdk = 30
         targetSdk = 34
-        versionCode = 8
-        versionName = "1.8.0"
+        versionCode = 9
+        versionName = "1.9.0"
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = true
+            isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
 
