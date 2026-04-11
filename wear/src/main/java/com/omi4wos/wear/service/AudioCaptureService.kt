@@ -103,6 +103,9 @@ class AudioCaptureService : Service() {
     // Dynamic Conversation Tracking
     private var lastValidSpeechEndTimeMs: Long = 0L
 
+    // Notification deduplication — avoid nm.notify() when text hasn't changed
+    private var lastNotificationText: String = ""
+
     // Hourly sync tracking (persisted across service restarts)
     private var lastSyncTimeMs: Long = 0L
 
@@ -563,6 +566,8 @@ class AudioCaptureService : Service() {
     }
 
     private fun updateNotification(text: String) {
+        if (text == lastNotificationText) return
+        lastNotificationText = text
         val notification = createNotification(text)
         val nm = getSystemService(NotificationManager::class.java)
         nm.notify(Constants.WEAR_NOTIFICATION_ID, notification)

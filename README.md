@@ -21,7 +21,7 @@ The phone companion APK is required for both watch builds. Pick the APKs that ma
 | File | Description |
 |---|---|
 | `Omi4wOS_Mobile_v1.8.apk` | **Recommended phone build.** Logo title, redesigned watch card, all v1.7 fixes included. Install onto your **Android Phone**. |
-| `Omi4wOS_Wear_v1.8.apk` | **Recommended watch build.** Same as v1.7 wear — no watch-side changes in v1.8. Install via ADB onto your **Watch**. |
+| `Omi4wOS_Wear_v1.9.apk` | **Recommended watch build.** Battery drain optimisations — no animations, idle slowdown after 30s. Install via ADB onto your **Watch**. |
 
 Older builds are in `releases/archive/`. See [CHANGELOG](releases/CHANGELOG.md) for full history.
 
@@ -101,6 +101,13 @@ To interface perfectly with Omi Cloud natively, this system securely routes thro
 6. **Phone**: The companion app listens on the Data Layer, assembling the received Opus payloads into an `.bin` archive.
 7. **Cloud Upload**: The phone pushes the compiled `.bin` archive into the Omi Cloud using standard Firebase Authentication tokens.
 
+## What's New in v1.9
+
+- **No UI animations**: Removed all Compose animations from the watch app (pulsing scale, animated colour transitions, halo fade). State changes are now instant. Continuous animations were driving GPU/RenderThread work throughout the entire listening phase — the primary source of background battery drain identified via system trace.
+- **Removed `TimeText()` from the watch screen**: Wear Compose's `TimeText` keeps a coroutine alive that ticks every second in interactive mode, keeping a Choreographer frame scheduled continuously. Removed — the watch's own ambient display already shows the time.
+- **Deduplicated foreground notification updates**: `updateNotification()` now skips `nm.notify()` if the notification text hasn't changed, eliminating redundant system-level redraws at speech segment boundaries.
+- **Idle classification slowdown after 30 s** (was 5 minutes): The VAD classification loop drops from 960ms to 1920ms polling rate after 30 seconds of continuous silence instead of 5 minutes. During a quiet period the watch now halves its CPU duty cycle within 30 seconds rather than continuing at full rate for the entire gap. No impact on detection — the existing 5.76s silence-offset threshold (`speechOffsetFrames`) handles natural pauses before the idle rate can ever engage.
+
 ## What's New in v1.8
 
 - **Logo title**: The omi4wearOS logo image replaces the plain text title on the phone home screen.
@@ -135,7 +142,7 @@ To interface perfectly with Omi Cloud natively, this system securely routes thro
 - **Duplicate Audio Prevention**: Companion dual-listeners track immutable Chunk Index IDs to drop stuttering or duplicated chunks in bad connections.
 - **Dynamic Conversational Hysteresis**: Switches detection sensitivity between Idle Mode (2 consecutive positive windows required) and Active Conversation Mode (1 window sufficient), preventing false positives during silence while remaining responsive mid-conversation.
 - **Pre-roll Buffer**: Retains 1.5s of audio prior to speech onset to prevent sentence cut-off when transitioning from idle, without the encoding overhead of longer buffers.
-- **Idle Power Throttling**: Classification interval doubles from 960ms to 1920ms after 5 minutes of silence. Connectivity polling reduced from 30s to 2 minutes.
+- **Idle Power Throttling**: Classification interval doubles from 960ms to 1920ms after 30 seconds of silence (reduced from 5 minutes in v1.9). Connectivity polling reduced from 30s to 2 minutes. All UI animations removed in v1.9.
 - **Background Upload Retry**: Failed `.bin` uploads are cached natively in a local Room database and re-attempted on next internet connection.
 
 ---

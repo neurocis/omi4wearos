@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.9 — 2026-04-11
+
+### Wear (`Omi4wOS_Wear_v1.9.apk`)
+
+**Changed**
+- **Removed all UI animations**: Eliminated the infinite pulsing scale animation, animated colour transitions (`animateColorAsState`, `animateFloatAsState`), and the halo fade effect from the recording button. All states (idle, listening, speech detected) are now represented by instant static colour changes. Continuous animations were the primary source of GPU/RenderThread activity during the listening phase.
+- **Removed `TimeText()` from the app screen**: The Wear Compose `TimeText` composable subscribes to a system clock tick every second in interactive mode, keeping a Choreographer frame scheduled continuously. Removed from the app UI — the watch's own ambient display already shows the time.
+- **Deduplicated foreground notification updates**: `AudioCaptureService.updateNotification()` now tracks the last-posted text and skips `nm.notify()` if the content hasn't changed, eliminating redundant system-level redraws at speech segment boundaries.
+- **Idle classification slowdown after 30 s** (was 5 minutes): The classification loop drops from its active 960ms polling rate to the slower 1920ms idle rate after just 30 seconds of continuous silence, rather than 5 minutes. During a typical quiet period between conversations the watch was previously running at full polling rate for the entire gap; it now halves its CPU duty cycle within half a minute of silence. No impact on detection latency — the existing 5.76s silence-offset threshold (`speechOffsetFrames`) already handles natural pauses long before the idle slowdown kicks in.
+
+---
+
 ## v1.8 — 2026-04-10
 
 ### Mobile (`Omi4wOS_Mobile_v1.8.apk`)

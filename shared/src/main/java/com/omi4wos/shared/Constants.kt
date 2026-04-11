@@ -32,7 +32,7 @@ object Constants {
     // Classification duty cycle
     const val CLASSIFICATION_INTERVAL_MS = 960L // ~1 WebRTC polling window
     const val IDLE_CLASSIFICATION_INTERVAL_MS = 1920L // 2× slower loop during extended silence
-    const val IDLE_SLOWDOWN_AFTER_MS = 300_000L // 5 min without speech → switch to slow interval
+    const val IDLE_SLOWDOWN_AFTER_MS = 30_000L // 30 s without speech → switch to slow interval
 
     // Connectivity sync
     const val CONNECTIVITY_POLL_INTERVAL_MS = 120_000L // Check every 2 min (was 30s)
