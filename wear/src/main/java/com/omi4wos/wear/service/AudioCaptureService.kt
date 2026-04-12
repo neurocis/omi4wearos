@@ -26,6 +26,7 @@ import com.omi4wos.wear.audio.SpeechClassifier
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
@@ -34,6 +35,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.UUID
 
 /**
@@ -298,13 +300,21 @@ class AudioCaptureService : Service() {
                     if (request.isFinal) {
                         // Debounced upload: wait 30 s after the last segment ends so that
                         // consecutive 60-s max-segments land in one Omi conversation.
+                        //
+                        // IMPORTANT: cancel() is only effective during the delay phase.
+                        // Once the delay completes, performSync() runs inside NonCancellable
+                        // so that a new isFinal arriving mid-sync cannot kill the job before
+                        // CMD_SYNC_END is sent. Without this, the phone receives audio chunks
+                        // but flushBatch() is never triggered and nothing gets uploaded.
                         realtimeSyncJob?.cancel()
                         realtimeSyncJob = serviceScope.launch {
-                            delay(REALTIME_SYNC_IDLE_MS)
-                            Log.d(TAG, "Realtime idle sync: uploading accumulated segments")
-                            performSync()
-                            lastSyncTimeMs = System.currentTimeMillis()
-                            prefs.edit().putLong(Constants.PREF_LAST_SYNC_TIME, lastSyncTimeMs).apply()
+                            delay(REALTIME_SYNC_IDLE_MS) // cancellable — reset timer on new segment
+                            withContext(NonCancellable) { // must reach CMD_SYNC_END no matter what
+                                Log.d(TAG, "Realtime idle sync: uploading accumulated segments")
+                                performSync()
+                                lastSyncTimeMs = System.currentTimeMillis()
+                                prefs.edit().putLong(Constants.PREF_LAST_SYNC_TIME, lastSyncTimeMs).apply()
+                            }
                         }
                     }
                 }
