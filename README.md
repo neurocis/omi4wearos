@@ -21,7 +21,7 @@ The phone companion APK is required for both watch builds. Pick the APKs that ma
 | File | Description |
 |---|---|
 | `Omi4wOS_Mobile_v1.8.apk` | **Recommended phone build.** Logo title, redesigned watch card, all v1.7 fixes included. Install onto your **Android Phone**. |
-| `Omi4wOS_Wear_v1.9.apk` | **Recommended watch build.** Battery drain optimisations — no animations, idle slowdown after 30s. Install via ADB onto your **Watch**. |
+| `Omi4wOS_Wear_v1.10.apk` | **Recommended watch build.** Battery optimisations + first-word clipping fix. Install via ADB onto your **Watch**. |
 
 Older builds are in `releases/archive/`. See [CHANGELOG](releases/CHANGELOG.md) for full history.
 
@@ -101,6 +101,14 @@ To interface perfectly with Omi Cloud natively, this system securely routes thro
 6. **Phone**: The companion app listens on the Data Layer, assembling the received Opus payloads into an `.bin` archive.
 7. **Cloud Upload**: The phone pushes the compiled `.bin` archive into the Omi Cloud using standard Firebase Authentication tokens.
 
+## What's New in v1.10
+
+- **First word clipping fixed**: Onset detection now always requires 1 VAD frame (960ms) instead of 2 in idle mode. Combined with the extended pre-roll, sentence-opening words are reliably captured even after extended silence.
+- **Pre-roll extended to 3.5s**: Was 2.5s. Provides 2.54s of audio context before the detected speech onset, eliminating cold-start clipping.
+- **Async Opus encoding**: The classification thread no longer blocks on MediaCodec. Raw PCM is queued (~1ms) to a dedicated `Dispatchers.IO` encoder coroutine, freeing the classification thread to sleep for its full 960ms cycle. Trace data showed the previous synchronous encode was blocking the thread for ~360ms wall time per speech cycle.
+- **Integer loudness gate**: `calculateRmsDb()` (15k float divisions + sqrt + log10 every cycle) replaced with a fast integer energy comparison — same threshold, no floating-point math.
+- **Idle classification rate**: 3× slower than active (3000ms vs 960ms) after 30s of silence, down from the previous 2× (1920ms).
+
 ## What's New in v1.9
 
 - **No UI animations**: Removed all Compose animations from the watch app (pulsing scale, animated colour transitions, halo fade). State changes are now instant. Continuous animations were driving GPU/RenderThread work throughout the entire listening phase — the primary source of background battery drain identified via system trace.
@@ -142,7 +150,9 @@ To interface perfectly with Omi Cloud natively, this system securely routes thro
 - **Duplicate Audio Prevention**: Companion dual-listeners track immutable Chunk Index IDs to drop stuttering or duplicated chunks in bad connections.
 - **Dynamic Conversational Hysteresis**: Switches detection sensitivity between Idle Mode (2 consecutive positive windows required) and Active Conversation Mode (1 window sufficient), preventing false positives during silence while remaining responsive mid-conversation.
 - **Pre-roll Buffer**: Retains 1.5s of audio prior to speech onset to prevent sentence cut-off when transitioning from idle, without the encoding overhead of longer buffers.
-- **Idle Power Throttling**: Classification interval doubles from 960ms to 1920ms after 30 seconds of silence (reduced from 5 minutes in v1.9). Connectivity polling reduced from 30s to 2 minutes. All UI animations removed in v1.9.
+- **Idle Power Throttling**: Classification interval slows to 3000ms after 30s of silence (v1.10), down from 1920ms (v1.9) and 5 minutes (original). Connectivity polling reduced from 30s to 2 minutes. All UI animations removed in v1.9.
+- **Async Encoding Pipeline** (v1.10): Opus encoding runs on a dedicated IO coroutine, removing a ~360ms MediaCodec block from the classification thread every speech cycle.
+- **Pre-roll Buffer**: 3.5s of audio before speech onset (v1.10), up from 2.5s, preventing first-word clipping in cold-start mode.
 - **Background Upload Retry**: Failed `.bin` uploads are cached natively in a local Room database and re-attempted on next internet connection.
 
 ---

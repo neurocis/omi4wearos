@@ -13,13 +13,17 @@ object Constants {
     // Silero VAD parameters
     const val WEBRTC_INPUT_SAMPLES = 15360 // 0.960s at 16kHz (exactly 30 frames of 32ms)
     const val LOUDNESS_THRESHOLD_DB = 52.0 // Raised from 45dB to filter watch vibration and clothing rustle
+    // Integer energy threshold equivalent to LOUDNESS_THRESHOLD_DB.
+    // Derived: rms_norm = 10^((52-90)/20) ≈ 0.012589; threshold = (rms_norm * 32768)^2 ≈ 170_181
+    // Used by isLoudEnough() to avoid float math (sqrt, log10) on every classification cycle.
+    const val LOUDNESS_THRESHOLD_SQ = 170_181L
 
     // Circular buffer: store last 20 seconds of audio (pre-roll is 1.5s, 20s is more than sufficient)
     const val CIRCULAR_BUFFER_SECONDS = 20
     const val CIRCULAR_BUFFER_SAMPLES = SAMPLE_RATE * CIRCULAR_BUFFER_SECONDS
 
     // Speech segment extraction
-    const val PRE_ROLL_SECONDS = 2.5f // Increased from 1.5s — 1.5s was clipping first words
+    const val PRE_ROLL_SECONDS = 3.5f // Increased from 2.5s — 2.5s was clipping first word in idle mode
     const val POST_ROLL_SECONDS = 1.5f // Audio after speech stops
 
     // Dynamic Hysteresis Constants
@@ -31,7 +35,7 @@ object Constants {
 
     // Classification duty cycle
     const val CLASSIFICATION_INTERVAL_MS = 960L // ~1 WebRTC polling window
-    const val IDLE_CLASSIFICATION_INTERVAL_MS = 1920L // 2× slower loop during extended silence
+    const val IDLE_CLASSIFICATION_INTERVAL_MS = 3000L // 3× slower loop during extended silence
     const val IDLE_SLOWDOWN_AFTER_MS = 30_000L // 30 s without speech → switch to slow interval
 
     // Connectivity sync

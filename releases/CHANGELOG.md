@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.10 — 2026-04-11
+
+### Wear (`Omi4wOS_Wear_v1.10.apk`)
+
+**Fixed**
+- **First word clipping**: The silence-onset guard required 2 consecutive VAD-positive windows (1.92s) before starting a segment when the watch had been quiet for more than 60 seconds. This pushed the effective capture window too close to the speech start, causing the first word to fall outside the pre-roll buffer. Onset is now always 1 frame (960ms), matching the active-conversation behaviour — the double-gate was redundant given the 52dB loudness gate + Silero VAD already filtering false positives.
+- **Pre-roll extended**: `PRE_ROLL_SECONDS` increased from 2.5s → 3.5s. Provides 2.54s of audio context before the detected speech onset (3.5s − 0.96s), comfortably capturing sentence-opening words even in cold-start (idle) mode.
+
+**Changed**
+- **Async Opus encoding pipeline**: Opus encoding and disk writes are now handled by a dedicated `Dispatchers.IO` coroutine (`encoderLoop`). The classification thread queues raw PCM into an unlimited `Channel<EncodeRequest>` (~1ms) and immediately returns to sleep. Previously the classification thread blocked on MediaCodec for ~360ms per speech cycle (wall: 424ms avg, CPU: 64ms avg — a 360ms kernel wait that prevented CPU deep-sleep between cycles).
+- **Integer loudness gate**: Replaced `calculateRmsDb()` (float division × 15 360 samples, sqrt, log10) with `isLoudEnough()` — an integer energy sum comparison against a pre-computed threshold. Mathematically equivalent, eliminates all floating-point math from every classification cycle.
+- **Idle classification interval**: 1920ms → 3000ms. Classification loop runs 3× slower than the active rate (960ms) after 30s of silence, reducing CPU wakeups from 30/min to 20/min during quiet periods.
+- **Trace markers added**: `android.os.Trace` sections added around `vad:classify`, `vad:loudness_gate`, `vad:buffer_read`, `vad:opus_encode`, `vad:chunk_save`, `vad:speech_frame`, `vad:extract_chunk`, `vad:preroll` for Perfetto/Studio profiler visibility.
+
+---
+
 ## v1.9 — 2026-04-11
 
 ### Wear (`Omi4wOS_Wear_v1.9.apk`)

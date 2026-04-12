@@ -28,6 +28,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -69,6 +70,24 @@ class AudioCaptureService : Service() {
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var classificationJob: Job? = null
+
+    /**
+     * Decouples Opus encoding from the classification loop.
+     * The classification coroutine sends raw PCM here and immediately returns to sleep.
+     * A separate Dispatchers.IO coroutine drains the channel, blocking on MediaCodec
+     * without ever touching the classification thread.
+     */
+    private data class EncodeRequest(
+        val pcmData: ShortArray,
+        val timestampMs: Long,
+        val durationMs: Long,
+        val speechConfidence: Float,
+        val chunkIndex: Int,
+        val segmentId: String,
+        val isFinal: Boolean
+    )
+    private val encodeChannel = Channel<EncodeRequest>(capacity = Channel.UNLIMITED)
+    private var encodeJob: Job? = null
 
     private lateinit var audioRecorder: AudioRecorder
     private lateinit var speechClassifier: SpeechClassifier
@@ -222,6 +241,11 @@ class AudioCaptureService : Service() {
             }
         }
 
+        // Start encoder pipeline (Dispatchers.IO — blocks on MediaCodec without touching classification thread)
+        encodeJob = serviceScope.launch(Dispatchers.IO) {
+            encoderLoop()
+        }
+
         // Start classification loop
         classificationJob = serviceScope.launch {
             classificationLoop()
@@ -238,7 +262,10 @@ class AudioCaptureService : Service() {
         classificationJob = null
 
         audioRecorder.stop()
-        opusEncoder.release()
+
+        // Close the encode channel — encoderLoop() drains remaining items then releases the encoder
+        encodeChannel.close()
+        encodeJob = null
 
         wakeLock?.let {
             if (it.isHeld) it.release()
@@ -251,6 +278,49 @@ class AudioCaptureService : Service() {
 
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
+    }
+
+    /**
+     * Drains the encodeChannel on Dispatchers.IO. Each request was queued by the
+     * classification loop in ~1ms; the ~360ms MediaCodec block happens here, completely
+     * off the classification thread. The encoder is released when the channel closes.
+     */
+    private suspend fun encoderLoop() {
+        try {
+            for (request in encodeChannel) {
+                android.os.Trace.beginSection("vad:opus_encode")
+                val encoded = if (request.pcmData.isNotEmpty()) opusEncoder.encode(request.pcmData) else null
+                android.os.Trace.endSection()
+
+                if (encoded != null || request.isFinal) {
+                    val chunk = AudioChunk(
+                        audioData = encoded ?: ByteArray(0),
+                        timestampMs = request.timestampMs,
+                        durationMs = request.durationMs,
+                        speechConfidence = request.speechConfidence,
+                        chunkIndex = request.chunkIndex,
+                        segmentId = request.segmentId,
+                        isFinal = request.isFinal
+                    )
+                    android.os.Trace.beginSection("vad:chunk_save")
+                    chunkRepository.saveChunk(chunk)
+                    android.os.Trace.endSection()
+
+                    if (request.isFinal && prefs.getString(Constants.PREF_STREAM_MODE, Constants.STREAM_MODE_BATCH) == Constants.STREAM_MODE_REALTIME) {
+                        realtimeSyncJob?.cancel()
+                        realtimeSyncJob = serviceScope.launch {
+                            delay(REALTIME_SYNC_IDLE_MS)
+                            Log.d(TAG, "Realtime idle sync: uploading accumulated segments")
+                            performSync()
+                            lastSyncTimeMs = System.currentTimeMillis()
+                            prefs.edit().putLong(Constants.PREF_LAST_SYNC_TIME, lastSyncTimeMs).apply()
+                        }
+                    }
+                }
+            }
+        } finally {
+            opusEncoder.release()
+        }
     }
 
     /**
@@ -269,21 +339,29 @@ class AudioCaptureService : Service() {
                 continue
             }
 
+            android.os.Trace.beginSection("vad:buffer_read")
             circularBuffer.readLatest(windowBuffer, windowSamples)
+            android.os.Trace.endSection()
 
-            val rmsDb = calculateRmsDb(windowBuffer)
-            if (rmsDb < Constants.LOUDNESS_THRESHOLD_DB) {
+            android.os.Trace.beginSection("vad:loudness_gate")
+            val loud = isLoudEnough(windowBuffer)
+            android.os.Trace.endSection()
+
+            if (!loud) {
                 handleSilenceFrame()
-                val interval = classificationInterval(lastSpeechDetectedMs)
-                delay(interval)
+                delay(classificationInterval(lastSpeechDetectedMs))
                 continue
             }
 
+            android.os.Trace.beginSection("vad:classify")
             val result = speechClassifier.classify(windowBuffer)
+            android.os.Trace.endSection()
 
             if (result.isSpeech) {
                 lastSpeechDetectedMs = System.currentTimeMillis()
+                android.os.Trace.beginSection("vad:speech_frame")
                 handleSpeechFrame(result.confidence)
+                android.os.Trace.endSection()
             } else {
                 handleSilenceFrame()
             }
@@ -311,7 +389,7 @@ class AudioCaptureService : Service() {
 
         val timeSinceLastSpeech = System.currentTimeMillis() - lastValidSpeechEndTimeMs
         val isConversationActive = timeSinceLastSpeech < Constants.CONVERSATION_TIMEOUT_MS
-        val currentOnsetFrames = if (isConversationActive) 1 else 2
+        val currentOnsetFrames = 1 // Always 1 — pre-roll handles false-positive risk; 2-frame idle guard was clipping sentence openers
 
         if (!isInSpeechSegment && consecutiveSpeechFrames >= currentOnsetFrames) {
             isInSpeechSegment = true
@@ -325,16 +403,22 @@ class AudioCaptureService : Service() {
 
             val preRollSamples = (Constants.SAMPLE_RATE * Constants.PRE_ROLL_SECONDS).toInt()
             circularBuffer.rewindReadPos(preRollSamples)
+            android.os.Trace.beginSection("vad:preroll")
             extractAndSendPreRoll()
+            android.os.Trace.endSection()
         }
 
         if (isInSpeechSegment) {
+            android.os.Trace.beginSection("vad:extract_chunk")
             extractAndSendChunk(confidence, isFinal = false)
+            android.os.Trace.endSection()
 
             val elapsed = System.currentTimeMillis() - speechStartTimeMs
             if (elapsed > Constants.MAX_SPEECH_SEGMENT_SECONDS * 1000L) {
                 Log.d(TAG, "Max segment duration reached, forcing end")
+                android.os.Trace.beginSection("vad:extract_final")
                 extractAndSendChunk(0f, isFinal = true)
+                android.os.Trace.endSection()
                 isInSpeechSegment = false
                 _isSpeechDetected.value = false
                 updateNotification("Monitoring for speech…")
@@ -472,65 +556,42 @@ class AudioCaptureService : Service() {
     private fun extractAndSendPreRoll() {
         val unreadBuffer = circularBuffer.consumeUnread()
         if (unreadBuffer.isEmpty()) return
-
-        val encoded = opusEncoder.encode(unreadBuffer)
-        if (encoded != null) {
-            val chunk = AudioChunk(
-                audioData = encoded,
-                timestampMs = speechStartTimeMs - (Constants.PRE_ROLL_SECONDS * 1000).toLong(),
-                durationMs = (Constants.PRE_ROLL_SECONDS * 1000).toLong(),
-                speechConfidence = 0f,
-                chunkIndex = chunkIndex++,
-                segmentId = currentSegmentId,
-                isFinal = false
-            )
-            chunkRepository.saveChunk(chunk)
-        }
+        encodeChannel.trySend(EncodeRequest(
+            pcmData = unreadBuffer,
+            timestampMs = speechStartTimeMs - (Constants.PRE_ROLL_SECONDS * 1000).toLong(),
+            durationMs = (Constants.PRE_ROLL_SECONDS * 1000).toLong(),
+            speechConfidence = 0f,
+            chunkIndex = chunkIndex++,
+            segmentId = currentSegmentId,
+            isFinal = false
+        ))
     }
 
     private fun extractAndSendChunk(confidence: Float, isFinal: Boolean) {
         val unreadBuffer = circularBuffer.consumeUnread()
         if (unreadBuffer.isEmpty() && !isFinal) return
-
-        val encoded = if (unreadBuffer.isNotEmpty()) opusEncoder.encode(unreadBuffer) else null
-        if (encoded != null || isFinal) {
-            val chunk = AudioChunk(
-                audioData = encoded ?: ByteArray(0),
-                timestampMs = System.currentTimeMillis(),
-                durationMs = Constants.CLASSIFICATION_INTERVAL_MS,
-                speechConfidence = confidence,
-                chunkIndex = chunkIndex++,
-                segmentId = currentSegmentId,
-                isFinal = isFinal
-            )
-            chunkRepository.saveChunk(chunk)
-
-            // In realtime mode, debounce the sync by 30 s. Consecutive forced-end
-            // segments (MAX_SPEECH_SEGMENT_SECONDS) accumulate on disk; the single
-            // performSync() that fires after 30 s of idle sends them all under one
-            // syncId so the phone can group them into one Omi conversation.
-            if (isFinal && prefs.getString(Constants.PREF_STREAM_MODE, Constants.STREAM_MODE_BATCH) == Constants.STREAM_MODE_REALTIME) {
-                realtimeSyncJob?.cancel()
-                realtimeSyncJob = serviceScope.launch {
-                    delay(REALTIME_SYNC_IDLE_MS)
-                    Log.d(TAG, "Realtime idle sync: uploading accumulated segments")
-                    performSync()
-                    lastSyncTimeMs = System.currentTimeMillis()
-                    prefs.edit().putLong(Constants.PREF_LAST_SYNC_TIME, lastSyncTimeMs).apply()
-                }
-            }
-        }
+        // Queue raw PCM — encode + save happen in encoderLoop() on Dispatchers.IO,
+        // so this call returns in ~1ms and never blocks the classification thread.
+        encodeChannel.trySend(EncodeRequest(
+            pcmData = unreadBuffer,
+            timestampMs = System.currentTimeMillis(),
+            durationMs = Constants.CLASSIFICATION_INTERVAL_MS,
+            speechConfidence = confidence,
+            chunkIndex = chunkIndex++,
+            segmentId = currentSegmentId,
+            isFinal = isFinal
+        ))
     }
 
-    private fun calculateRmsDb(samples: ShortArray): Double {
-        if (samples.isEmpty()) return 0.0
-        var sum = 0.0
-        for (sample in samples) {
-            val normalized = sample / 32768.0
-            sum += normalized * normalized
-        }
-        val rms = Math.sqrt(sum / samples.size)
-        return if (rms > 0) 20.0 * Math.log10(rms) + 90.0 else 0.0
+    /**
+     * Integer energy gate — equivalent to the old LOUDNESS_THRESHOLD_DB = 52.0 check but
+     * without any floating-point division, sqrt, or log10. Runs on every classification
+     * cycle so eliminating the float math meaningfully reduces CPU work during silence.
+     */
+    private fun isLoudEnough(samples: ShortArray): Boolean {
+        var sum = 0L
+        for (s in samples) sum += s.toLong() * s
+        return (sum / samples.size) > Constants.LOUDNESS_THRESHOLD_SQ
     }
 
     private fun createNotificationChannel() {
