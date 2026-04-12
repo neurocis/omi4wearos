@@ -32,14 +32,11 @@ import java.util.concurrent.ConcurrentHashMap
  * Receives assembled Opus audio segments from [AudioReceiverService], writes them to
  * Limitless-compatible .bin files, and uploads them to Omi Cloud.
  *
- * Realtime mode: each segment is uploaded immediately as a single-file POST.
- *
- * Batch mode: segments are buffered in memory (keyed by syncId). When the watch sends
- * CMD_SYNC_END (translated into ACTION_FLUSH_SYNC), all buffered segments for that
- * syncId are grouped into temporal sessions (gaps > SESSION_GAP_MS = separate upload)
- * and each session is sent as one multipart POST containing all its .bin files.
- * This mirrors the grouping logic in sync_omi_cloud.py and prevents conversation
- * fragmentation on Omi's backend caused by independent per-segment jobs.
+ * Segments are buffered in memory (keyed by syncId). When the watch sends CMD_SYNC_END
+ * (translated into ACTION_FLUSH_SYNC), all buffered segments for that syncId are grouped
+ * into temporal sessions (gaps > SESSION_GAP_MS = separate upload) and each session is
+ * sent as one multipart POST. This prevents conversation fragmentation on Omi's backend
+ * and ensures segments from a single sync window land in one conversation.
  */
 class AudioUploadService : Service() {
 
@@ -122,20 +119,13 @@ class AudioUploadService : Service() {
                 val audioSizeBytes = intent.getLongExtra(EXTRA_AUDIO_SIZE_BYTES, 0L)
 
                 if (audioData != null && audioData.isNotEmpty()) {
-                    serviceScope.launch {
-                        val config = omiConfig.getConfig()
-                        if (config.streamMode == Constants.STREAM_MODE_BATCH) {
-                            // Buffer even when syncId is empty: the Wear Data Layer does not
-                            // guarantee that CMD_SYNC_START (control path) arrives before the
-                            // first audio chunk (speech path). Segments with no syncId are
-                            // held under PENDING_SYNC_KEY and merged into the real syncId
-                            // inside flushBatch() when CMD_SYNC_END is processed.
-                            val effectiveSyncId = syncId.ifEmpty { PENDING_SYNC_KEY }
-                            bufferSegment(PendingSegment(segmentId, effectiveSyncId, audioData, startTime, endTime, confidence, batteryLevel, audioSizeBytes))
-                        } else {
-                            uploadSegment(segmentId, syncId, audioData, startTime, endTime, confidence, batteryLevel, audioSizeBytes)
-                        }
-                    }
+                    // Buffer even when syncId is empty: the Wear Data Layer does not
+                    // guarantee that CMD_SYNC_START (control path) arrives before the
+                    // first audio chunk (speech path). Segments with no syncId are
+                    // held under PENDING_SYNC_KEY and merged into the real syncId
+                    // inside flushBatch() when CMD_SYNC_END is processed.
+                    val effectiveSyncId = syncId.ifEmpty { PENDING_SYNC_KEY }
+                    bufferSegment(PendingSegment(segmentId, effectiveSyncId, audioData, startTime, endTime, confidence, batteryLevel, audioSizeBytes))
                 }
             }
             ACTION_FLUSH_SYNC -> {

@@ -20,8 +20,8 @@ The phone companion APK is required for both watch builds. Pick the APKs that ma
 
 | File | Description |
 |---|---|
-| `Omi4wOS_Mobile_v1.9.apk` | **Recommended phone build.** Upload retry fixes, background retry worker, compact UI. Install onto your **Android Phone**. |
-| `Omi4wOS_Wear_v1.11.apk` | **Recommended watch build.** Batch sync incomplete-segment fix. Install via ADB onto your **Watch**. |
+| `Omi4wOS_Mobile_v2.0.apk` | **Recommended phone build.** Batch mode removed — streamlined UI, always-realtime upload. Install onto your **Android Phone**. |
+| `Omi4wOS_Wear_v2.0.apk` | **Recommended watch build.** Batch mode removed — always-realtime sync with 30-second debounce. Install via ADB onto your **Watch**. |
 
 Older builds are in `releases/archive/`. See [CHANGELOG](releases/CHANGELOG.md) for full history.
 
@@ -39,7 +39,7 @@ Older builds are in `releases/archive/`. See [CHANGELOG](releases/CHANGELOG.md) 
 │       ↓                              │
 │  Linear Buffer + Opus Encoder API    │
 │       ↓                              │
-│  BLE Batch Blast (on phrase end)     │
+│  BLE Upload (30s debounce per sync)  │
 └──────────────────────────────────────┘
               ↓  BLE/WiFi (Native Opus Streams)
 ┌──────────────────────────────────────┐
@@ -60,7 +60,7 @@ Older builds are in `releases/archive/`. See [CHANGELOG](releases/CHANGELOG.md) 
 | Module    | Description                                      |
 |-----------|--------------------------------------------------|
 | `:shared` | Common data models, constants, Data Layer paths  |
-| `:wear`   | WearOS watch app — native AudioRecord, Silero LSTM VAD, and batch Opus compression |
+| `:wear`   | WearOS watch app — native AudioRecord, Silero LSTM VAD, and realtime Opus upload |
 | `:mobile` | Phone companion — Bluetooth aggregator, `.bin` compiler, and Firebase token auto-refresh |
 
 ## Tech Stack
@@ -97,9 +97,31 @@ To interface perfectly with Omi Cloud natively, this system securely routes thro
 2. **Loudness Gate**: Each 960ms window is checked against a 52dB RMS threshold before any inference runs. Windows below the threshold are skipped entirely, keeping the CPU idle during silence.
 3. **Silero VAD**: An LSTM neural network (Silero) evaluates each window that passes the loudness gate. It classifies 30 × 32ms frames per window and reports a speech probability per frame. Windows with ≥4 frames above 0.5 probability are flagged as speech.
 4. **Local Caching**: Audio containing voice activity is Opus-encoded and immediately serialized to the watch's internal filesystem. This ensures no data is lost if the watch is away from the phone.
-5. **Data Transmission**: Once a sentence concludes, the watch evaluates Bluetooth connectivity. In **Realtime Stream** mode, the watch immediately transmits the completed segment as soon as it ends. In **Batch Stream** mode, the watch accumulates segments and syncs on a schedule you set from the phone companion. Available intervals: `:00` (once per hour, at the top of the hour), `:30` (twice per hour, at :00 and :30), or fixed durations of 5, 10, 15, 30, 60, 90, or 120 minutes. The `:00` and `:30` options are clock-aligned — the watch checks whether the most recently passed boundary (:00 or :30) has not yet been synced, so syncs happen at predictable wall-clock times regardless of when the app started. Fixed-duration intervals count down from the last sync. If disconnected, files are securely retained until a background worker syncs them upon reconnection.
+5. **Data Transmission**: Once a sentence concludes, the watch starts a 30-second debounce timer. When the timer fires (or is reset by a new segment ending), the watch evaluates Bluetooth connectivity and pushes all pending segments to the phone in a single sync session. This debounce window ensures consecutive 60-second max-segments from a long conversation land in one Omi conversation rather than being fragmented. If the phone is disconnected, segments are retained on disk and flushed when connectivity is restored — an hourly fallback sync in the connectivity poll loop handles this automatically.
 6. **Phone**: The companion app listens on the Data Layer, assembling the received Opus payloads into an `.bin` archive.
 7. **Cloud Upload**: The phone pushes the compiled `.bin` archive into the Omi Cloud using standard Firebase Authentication tokens.
+
+## What's New in v2.0 (Wear + Mobile)
+
+**Architecture: Batch Mode Removed**
+
+A controlled 30-minute battery test was run with all non-BT radios off and constant dialog audio to measure the real-world impact of stream mode selection:
+
+- Realtime mode (sync per completed segment): **~1% / 5 min**
+- Batch mode (no Bluetooth transfers during recording): **~1% / 5 min**
+
+The results were identical. Bluetooth data transfer is not a meaningful contributor to watch battery drain. The dominant costs are the always-on microphone and the `PARTIAL_WAKE_LOCK` required to keep the CPU awake for AudioRecord — both of which are fixed costs regardless of upload frequency.
+
+**What was removed**
+- Stream mode card (Realtime / Batch toggle) from the phone companion UI
+- Batch interval dropdown (all minute-based and clock-aligned options)
+- Force Sync button from the phone companion UI
+- `SET_STREAM_MODE` command and all related constants, prefs keys, and scheduling logic
+
+**What the watch does now**
+The watch uses a single upload strategy: after each completed speech segment, a 30-second debounced sync job is scheduled. Consecutive segments within the window are all included in one `performSync()` call, ensuring they land in one Omi conversation. An hourly fallback in the connectivity loop handles BT-reconnect scenarios.
+
+---
 
 ## What's New in v1.11 (Wear) / v1.9 (Mobile)
 

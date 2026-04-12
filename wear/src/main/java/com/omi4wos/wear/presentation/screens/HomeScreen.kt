@@ -10,13 +10,11 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -57,9 +55,8 @@ fun HomeScreen(onAboutClick: () -> Unit = {}) {
     val context = LocalContext.current
     val haptic  = LocalHapticFeedback.current
 
-    val isRecording     by AudioCaptureService.isRecording.collectAsState()
+    val isRecording      by AudioCaptureService.isRecording.collectAsState()
     val isSpeechDetected by AudioCaptureService.isSpeechDetected.collectAsState()
-    val phoneConnected  by AudioCaptureService.isPhoneConnected.collectAsState()
 
     var hasPermission by remember {
         mutableStateOf(
@@ -160,34 +157,6 @@ fun HomeScreen(onAboutClick: () -> Unit = {}) {
                     MaterialTheme.colors.onSurface,
                 textAlign = TextAlign.Center
             )
-
-            Spacer(modifier = Modifier.height(6.dp))
-
-            // Phone connection — small coloured dot + compact text
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(6.dp)
-                        .background(
-                            color = if (phoneConnected) Color(0xFF4CAF50) else Color(0xFF555555),
-                            shape = CircleShape
-                        )
-                )
-                Spacer(modifier = Modifier.width(5.dp))
-                Text(
-                    text = if (phoneConnected) "Phone connected" else "Phone disconnected",
-                    fontSize = 10.sp,
-                    color = if (phoneConnected)
-                        Color(0xFF4CAF50)
-                    else
-                        MaterialTheme.colors.onSurface.copy(alpha = 0.4f)
-                )
-                // Mirror the dot+spacer width so the text itself is optically centred
-                Spacer(modifier = Modifier.width(11.dp))
-            }
 
             Spacer(modifier = Modifier.height(12.dp))
 

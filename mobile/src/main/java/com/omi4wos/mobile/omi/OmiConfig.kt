@@ -25,9 +25,7 @@ class OmiConfig(private val context: Context) {
         val firebaseToken: String = "",
         val firebaseRefreshToken: String = "",
         val firebaseWebApiKey: String = "",
-        val firebaseTokenExpiresAt: Long = 0L,
-        val streamMode: String = Constants.STREAM_MODE_BATCH,
-        val batchInterval: String = Constants.DEFAULT_BATCH_INTERVAL
+        val firebaseTokenExpiresAt: Long = 0L
     ) {
         val isConfigured: Boolean
             get() = firebaseToken.isNotBlank() || (apiKey.isNotBlank() && appId.isNotBlank() && userId.isNotBlank())
@@ -41,8 +39,6 @@ class OmiConfig(private val context: Context) {
         private val KEY_FIREBASE_REFRESH_TOKEN = stringPreferencesKey("omi_firebase_refresh_token")
         private val KEY_FIREBASE_WEB_API_KEY = stringPreferencesKey("omi_firebase_web_api_key")
         private val KEY_FIREBASE_TOKEN_EXPIRES_AT = longPreferencesKey("omi_firebase_token_expires_at")
-        private val KEY_STREAM_MODE    = stringPreferencesKey(Constants.PREF_STREAM_MODE)
-        private val KEY_BATCH_INTERVAL = stringPreferencesKey(Constants.PREF_BATCH_INTERVAL)
     }
 
     /**
@@ -57,9 +53,7 @@ class OmiConfig(private val context: Context) {
                 firebaseToken = prefs[KEY_FIREBASE_TOKEN] ?: "",
                 firebaseRefreshToken = prefs[KEY_FIREBASE_REFRESH_TOKEN] ?: "",
                 firebaseWebApiKey = prefs[KEY_FIREBASE_WEB_API_KEY] ?: "",
-                firebaseTokenExpiresAt = prefs[KEY_FIREBASE_TOKEN_EXPIRES_AT] ?: 0L,
-                streamMode    = prefs[KEY_STREAM_MODE]    ?: Constants.STREAM_MODE_BATCH,
-                batchInterval = prefs[KEY_BATCH_INTERVAL] ?: Constants.DEFAULT_BATCH_INTERVAL
+                firebaseTokenExpiresAt = prefs[KEY_FIREBASE_TOKEN_EXPIRES_AT] ?: 0L
             )
         }.first()
     }
@@ -76,8 +70,6 @@ class OmiConfig(private val context: Context) {
             prefs[KEY_FIREBASE_REFRESH_TOKEN] = config.firebaseRefreshToken
             prefs[KEY_FIREBASE_WEB_API_KEY] = config.firebaseWebApiKey
             prefs[KEY_FIREBASE_TOKEN_EXPIRES_AT] = config.firebaseTokenExpiresAt
-            prefs[KEY_STREAM_MODE]    = config.streamMode
-            prefs[KEY_BATCH_INTERVAL] = config.batchInterval
         }
     }
 
@@ -92,9 +84,7 @@ class OmiConfig(private val context: Context) {
             firebaseToken = prefs[KEY_FIREBASE_TOKEN] ?: "",
             firebaseRefreshToken = prefs[KEY_FIREBASE_REFRESH_TOKEN] ?: "",
             firebaseWebApiKey = prefs[KEY_FIREBASE_WEB_API_KEY] ?: "",
-            firebaseTokenExpiresAt = prefs[KEY_FIREBASE_TOKEN_EXPIRES_AT] ?: 0L,
-            streamMode = prefs[KEY_STREAM_MODE] ?: Constants.STREAM_MODE_BATCH,
-            batchInterval = prefs[KEY_BATCH_INTERVAL] ?: Constants.DEFAULT_BATCH_INTERVAL
+            firebaseTokenExpiresAt = prefs[KEY_FIREBASE_TOKEN_EXPIRES_AT] ?: 0L
         )
     }
 

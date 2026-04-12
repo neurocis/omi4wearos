@@ -41,9 +41,6 @@ object DataLayerPaths {
     const val CMD_SYNC_START       = "SYNC_START"
     const val CMD_SYNC_END         = "SYNC_END"
     const val KEY_SYNC_ID          = "sync_id"
-    // Format: "SET_STREAM_MODE:realtime"  or  "SET_STREAM_MODE:batch:60"  (minutes)
-    const val CMD_SET_STREAM_MODE  = "SET_STREAM_MODE"
-
     // Codec identifiers
     const val CODEC_OPUS = "opus"
     const val CODEC_PCM16 = "pcm16"
