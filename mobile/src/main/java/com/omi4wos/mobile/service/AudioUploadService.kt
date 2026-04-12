@@ -227,12 +227,24 @@ class AudioUploadService : Service() {
         }
 
         val segments = pendingBatchSegments.remove(syncId)
-        if (segments.isNullOrEmpty()) {
+
+        // Absorb segments orphaned by previously failed syncs (watch cancelled mid-sync before
+        // CMD_SYNC_END was sent, leaving segments buffered under a syncId that will never flush).
+        val orphaned = mutableListOf<PendingSegment>()
+        for (key in pendingBatchSegments.keys.toList()) {
+            pendingBatchSegments.remove(key)?.let { orphaned.addAll(it) }
+        }
+        if (orphaned.isNotEmpty()) {
+            Log.w(TAG, "Absorbing ${orphaned.size} orphaned segment(s) from ${orphaned.map { it.syncId }.distinct()} into flush for $syncId")
+        }
+
+        val allSegments = (segments ?: emptyList()) + orphaned
+        if (allSegments.isEmpty()) {
             Log.w(TAG, "Flush requested for syncId=$syncId but no buffered segments found")
             return
         }
 
-        val sorted   = segments.sortedBy { it.startTime }
+        val sorted   = allSegments.sortedBy { it.startTime }
         val sessions = groupIntoSessions(sorted)
         val totalBytes = sorted.sumOf { it.audioSizeBytes }
         Log.i(TAG, "Flushing batch syncId=$syncId: ${sorted.size} segment(s) → " +
@@ -241,7 +253,7 @@ class AudioUploadService : Service() {
         val token = omiClient.getValidFirebaseToken(omiConfig)
         if (token.isNullOrBlank()) {
             Log.w(TAG, "No valid Firebase token — cannot batch upload to Omi Cloud")
-            for (seg in sorted) {
+            for (seg in allSegments) {
                 saveRecord(seg.segmentId, syncId, "[No valid Firebase Token]",
                     seg.startTime, seg.endTime, seg.confidence, seg.audioSizeBytes, seg.batteryLevel, uploaded = false)
             }
