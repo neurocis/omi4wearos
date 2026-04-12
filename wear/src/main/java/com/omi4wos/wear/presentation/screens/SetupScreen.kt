@@ -110,9 +110,17 @@ fun SetupScreen(onDone: () -> Unit = {}) {
                     )
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        text = "Open on your phone",
-                        fontSize = 10.sp,
-                        color = MaterialTheme.colors.onSurface.copy(alpha = 0.6f)
+                        text = watchUrl,
+                        fontSize = 9.sp,
+                        color = MaterialTheme.colors.onSurface.copy(alpha = 0.8f),
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = "Scan or type URL in any browser.\nComputer is easiest.",
+                        fontSize = 9.sp,
+                        textAlign = TextAlign.Center,
+                        color = MaterialTheme.colors.onSurface.copy(alpha = 0.5f)
                     )
                 }
             }

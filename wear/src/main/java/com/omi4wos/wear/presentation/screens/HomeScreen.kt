@@ -56,7 +56,7 @@ private val ColorNoPerms = Color(0xFFB71C1C) // Deep red — permission missing
 @Composable
 fun HomeScreen(
     onAboutClick: () -> Unit = {},
-    onSetupClick: () -> Unit = {}
+    onSettingsClick: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val haptic  = LocalHapticFeedback.current
@@ -180,13 +180,13 @@ fun HomeScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Setup",
+                    text = "Settings",
                     fontSize = 10.sp,
                     color = Color.White,
                     modifier = Modifier.clickable(
                         indication = null,
                         interactionSource = remember { MutableInteractionSource() }
-                    ) { onSetupClick() }
+                    ) { onSettingsClick() }
                 )
                 Spacer(modifier = Modifier.width(12.dp))
                 Text(

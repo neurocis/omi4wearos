@@ -25,7 +25,8 @@ import java.util.concurrent.TimeUnit
  */
 class StandaloneOmiApiClient(private val context: Context) {
 
-    private val config = StandaloneOmiConfig(context)
+    private val config    = StandaloneOmiConfig(context)
+    private val uploadLog = UploadLog(context)
 
     private val http = OkHttpClient.Builder()
         .connectTimeout(30, TimeUnit.SECONDS)
@@ -45,6 +46,7 @@ class StandaloneOmiApiClient(private val context: Context) {
         val sessions = groupIntoSessions(chunks)
 
         var allOk = true
+        var totalBytes = 0
         for (session in sessions) {
             val bytes = session
                 .filter { it.audioData.isNotEmpty() }
@@ -53,10 +55,9 @@ class StandaloneOmiApiClient(private val context: Context) {
                 ?: continue
 
             val timestampSecs = session.first().timestampMs / 1000L
-            val result = uploadSession(creds, bytes, timestampSecs)
+            var result = uploadSession(creds, bytes, timestampSecs)
 
             if (result == UploadResult.TOKEN_EXPIRED) {
-                // idToken was stale despite expiry check — force a refresh and retry once
                 Log.i(TAG, "Got 401, forcing token refresh and retrying…")
                 val refreshed = refreshToken(creds)
                 if (refreshed == null) {
@@ -64,11 +65,16 @@ class StandaloneOmiApiClient(private val context: Context) {
                     continue
                 }
                 creds = refreshed
-                if (uploadSession(creds, bytes, timestampSecs) != UploadResult.SUCCESS) allOk = false
-            } else if (result != UploadResult.SUCCESS) {
+                result = uploadSession(creds, bytes, timestampSecs)
+            }
+
+            if (result == UploadResult.SUCCESS) {
+                totalBytes += bytes.size
+            } else {
                 allOk = false
             }
         }
+        uploadLog.add(bytes = totalBytes, sessions = sessions.size, success = allOk)
         allOk
     }
 

@@ -65,24 +65,38 @@ class SetupServer(
   <h1>omi4wearOS Setup</h1>
   <p>Paste the same credentials used in the omi4wearOS companion app.</p>
 
-  <details>
-    <summary>How to get these values</summary>
+  <details open>
+    <summary>How to get these values (computer is easiest)</summary>
     <ol>
-      <li>Open <strong>app.omi.me</strong> in Chrome and sign in.</li>
-      <li>Open DevTools (<code>F12</code>) → <strong>Network</strong> tab.</li>
-      <li><strong>Firebase Web API Key</strong> — filter for <code>googleapis.com</code>, copy the <code>key=</code> value from any request URL.</li>
-      <li><strong>Firebase Token</strong> — click any request → Headers → copy the value after <code>Authorization: Bearer </code>.</li>
-      <li><strong>Refresh Token</strong> — DevTools → <strong>Application</strong> tab → IndexedDB or Local Storage → find <code>refreshToken</code>.</li>
+      <li>Open <strong>app.omi.me</strong> in Chrome on a computer.</li>
+      <li>Log out, then sign in again with Google to refresh the tokens.</li>
+      <li>Open DevTools (<code>F12</code> or <code>Cmd+Option+I</code>).</li>
+    </ol>
+    <p style="margin:8px 0 4px;color:#7c9eff;font-size:.8em">FIREBASE TOKEN &amp; REFRESH TOKEN</p>
+    <ol start="4">
+      <li>Go to the <strong>Application</strong> tab.</li>
+      <li>In the left panel: <strong>Storage → IndexedDB → firebaseLocalStorageDb → FirebaseLocalStorage</strong>.</li>
+      <li>Click the row starting with <code>firebase:authUser</code> to expand its value.</li>
+      <li>Open <strong>stsTokenManager</strong>:
+        <ul style="margin-top:4px">
+          <li><code>accessToken</code> → paste as <em>Firebase Token</em> below</li>
+          <li><code>refreshToken</code> → paste as <em>Refresh Token</em> below</li>
+        </ul>
+      </li>
+    </ol>
+    <p style="margin:8px 0 4px;color:#7c9eff;font-size:.8em">FIREBASE WEB API KEY</p>
+    <ol start="8">
+      <li>In the same <strong>firebase:authUser</strong> value, find <code>apiKey</code> — copy that value (<code>AIzaSy…</code>).</li>
     </ol>
   </details>
 
   <label>Firebase Web API Key</label>
   <input type="text" id="apiKey" placeholder="AIzaSy..." autocomplete="off" spellcheck="false">
 
-  <label>Firebase Token <span style="color:#555;font-size:.85em">(expires ~1 h — refresh token auto-renews it)</span></label>
+  <label>Firebase Token <span style="color:#555;font-size:.85em">(accessToken from stsTokenManager — expires ~1 h, auto-renewed)</span></label>
   <input type="text" id="idToken" placeholder="eyJ..." autocomplete="off" spellcheck="false">
 
-  <label>Refresh Token</label>
+  <label>Refresh Token <span style="color:#555;font-size:.85em">(refreshToken from stsTokenManager)</span></label>
   <input type="text" id="refreshToken" placeholder="AMf..." autocomplete="off" spellcheck="false">
 
   <button id="btn" onclick="doSetup()">Connect Watch</button>
