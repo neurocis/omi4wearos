@@ -149,14 +149,14 @@ class StandaloneOmiApiClient(private val context: Context) {
                 val newIdToken  = json.optString("id_token").takeIf { it.isNotBlank() } ?: return null
                 val newRefresh  = json.optString("refresh_token").takeIf { it.isNotBlank() } ?: creds.refreshToken
                 val expiresIn   = json.optLong("expires_in", 3600L)
-                val updated = creds.copy(
+                val expiresAtSecs = System.currentTimeMillis() / 1000L + expiresIn
+                config.saveRefreshedToken(newIdToken, newRefresh, expiresAtSecs)
+                Log.i(TAG, "Token refreshed (expires in ${expiresIn}s)")
+                creds.copy(
                     idToken            = newIdToken,
                     refreshToken       = newRefresh,
-                    tokenExpiresAtSecs = System.currentTimeMillis() / 1000L + expiresIn
+                    tokenExpiresAtSecs = expiresAtSecs
                 )
-                config.save(updated)
-                Log.i(TAG, "Token refreshed (expires in ${expiresIn}s)")
-                updated
             }
         } catch (e: Exception) {
             Log.e(TAG, "Token refresh failed", e)

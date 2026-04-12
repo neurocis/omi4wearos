@@ -2,16 +2,20 @@ package com.omi4wos.wear.network
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.omi4wos.wear.BuildConfig
 
 /**
- * Persists Firebase credentials and the Firebase Web API key for the standalone build.
- * Everything is user-configured at setup time — nothing is hardcoded.
+ * Persists Firebase credentials for the standalone build.
  *
- * Users obtain their Firebase Web API Key by:
- *   1. Opening app.omi.me in a browser
- *   2. Opening DevTools (F12) → Network tab
- *   3. Filtering for "googleapis.com" requests
- *   4. Copying the `key=` query parameter value
+ * On first access the SharedPreferences are seeded from the BuildConfig values that
+ * were injected at compile time from local.properties:
+ *
+ *   OMI_FIREBASE_WEB_API_KEY=AIzaSy...
+ *   OMI_FIREBASE_TOKEN=eyJ...
+ *   OMI_FIREBASE_REFRESH_TOKEN=AMf...
+ *
+ * Token refresh updates only the idToken + refreshToken in SharedPreferences so the
+ * new tokens survive process restarts without requiring a rebuild.
  */
 class StandaloneOmiConfig(context: Context) {
 
@@ -22,34 +26,37 @@ class StandaloneOmiConfig(context: Context) {
         val firebaseWebApiKey: String = "",
         val idToken: String = "",
         val refreshToken: String = "",
-        val userId: String = "",
         val tokenExpiresAtSecs: Long = 0L
     ) {
-        /** True when the user has completed setup and a refresh token is available. */
         val isConfigured: Boolean
-            get() = firebaseWebApiKey.isNotBlank() && refreshToken.isNotBlank() && userId.isNotBlank()
+            get() = firebaseWebApiKey.isNotBlank() && refreshToken.isNotBlank()
     }
 
-    fun load(): Credentials = Credentials(
-        firebaseWebApiKey  = prefs.getString(KEY_API_KEY, "") ?: "",
-        idToken            = prefs.getString(KEY_ID_TOKEN, "") ?: "",
-        refreshToken       = prefs.getString(KEY_REFRESH_TOKEN, "") ?: "",
-        userId             = prefs.getString(KEY_USER_ID, "") ?: "",
-        tokenExpiresAtSecs = prefs.getLong(KEY_EXPIRES_AT, 0L)
-    )
+    fun load(): Credentials {
+        // Seed from BuildConfig on first run (SharedPrefs empty)
+        if (!prefs.contains(KEY_ID_TOKEN) && BuildConfig.OMI_FIREBASE_TOKEN.isNotBlank()) {
+            prefs.edit()
+                .putString(KEY_API_KEY,       BuildConfig.OMI_FIREBASE_WEB_API_KEY)
+                .putString(KEY_ID_TOKEN,      BuildConfig.OMI_FIREBASE_TOKEN)
+                .putString(KEY_REFRESH_TOKEN, BuildConfig.OMI_FIREBASE_REFRESH_TOKEN)
+                .putLong(KEY_EXPIRES_AT, System.currentTimeMillis() / 1000L + 3600L)
+                .apply()
+        }
+        return Credentials(
+            firebaseWebApiKey  = prefs.getString(KEY_API_KEY, BuildConfig.OMI_FIREBASE_WEB_API_KEY) ?: "",
+            idToken            = prefs.getString(KEY_ID_TOKEN, BuildConfig.OMI_FIREBASE_TOKEN) ?: "",
+            refreshToken       = prefs.getString(KEY_REFRESH_TOKEN, BuildConfig.OMI_FIREBASE_REFRESH_TOKEN) ?: "",
+            tokenExpiresAtSecs = prefs.getLong(KEY_EXPIRES_AT, 0L)
+        )
+    }
 
-    fun save(creds: Credentials) {
+    /** Called by [StandaloneOmiApiClient] after a successful token refresh. */
+    fun saveRefreshedToken(idToken: String, refreshToken: String, expiresAtSecs: Long) {
         prefs.edit()
-            .putString(KEY_API_KEY,       creds.firebaseWebApiKey)
-            .putString(KEY_ID_TOKEN,      creds.idToken)
-            .putString(KEY_REFRESH_TOKEN, creds.refreshToken)
-            .putString(KEY_USER_ID,       creds.userId)
-            .putLong(KEY_EXPIRES_AT,      creds.tokenExpiresAtSecs)
+            .putString(KEY_ID_TOKEN,      idToken)
+            .putString(KEY_REFRESH_TOKEN, refreshToken)
+            .putLong(KEY_EXPIRES_AT,      expiresAtSecs)
             .apply()
-    }
-
-    fun clear() {
-        prefs.edit().clear().apply()
     }
 
     companion object {
@@ -57,7 +64,6 @@ class StandaloneOmiConfig(context: Context) {
         private const val KEY_API_KEY       = "firebase_web_api_key"
         private const val KEY_ID_TOKEN      = "id_token"
         private const val KEY_REFRESH_TOKEN = "refresh_token"
-        private const val KEY_USER_ID       = "user_id"
         private const val KEY_EXPIRES_AT    = "token_expires_at_secs"
     }
 }

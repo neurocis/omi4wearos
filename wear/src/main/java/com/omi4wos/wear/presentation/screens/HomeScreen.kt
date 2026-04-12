@@ -11,13 +11,11 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -54,10 +52,7 @@ private val ColorSpeech  = Color(0xFF43A047) // Green — speech detected
 private val ColorNoPerms = Color(0xFFB71C1C) // Deep red — permission missing
 
 @Composable
-fun HomeScreen(
-    onAboutClick: () -> Unit = {},
-    onSetupClick: () -> Unit = {}
-) {
+fun HomeScreen(onAboutClick: () -> Unit = {}) {
     val context = LocalContext.current
     val haptic  = LocalHapticFeedback.current
 
@@ -113,9 +108,7 @@ fun HomeScreen(
             Image(
                 painter = painterResource(R.drawable.omi4wearos_logo_title),
                 contentDescription = "omi4wearOS",
-                modifier = Modifier
-                    .height(22.dp)
-                    .padding(bottom = 2.dp)
+                modifier = Modifier.height(22.dp)
             )
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -123,7 +116,7 @@ fun HomeScreen(
             // Mic button with outer glow halo
             Box(contentAlignment = Alignment.Center) {
 
-                // Halo ring — soft glow when recording
+                // Halo ring — soft glow that appears when recording
                 Box(
                     modifier = Modifier
                         .size(90.dp)
@@ -157,7 +150,7 @@ fun HomeScreen(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // Primary status label
+            // Primary status label — colour-matched to button state when active
             Text(
                 text = when {
                     !hasPermission   -> "No permission"
@@ -174,33 +167,18 @@ fun HomeScreen(
                 textAlign = TextAlign.Center
             )
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
-            // Bottom links — Setup | About
-            Row(
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Setup",
-                    fontSize = 10.sp,
-                    color = Color.White,
-                    modifier = Modifier.clickable(
-                        indication = null,
-                        interactionSource = remember { MutableInteractionSource() }
-                    ) { onSetupClick() }
-                )
-                Spacer(modifier = Modifier.width(12.dp))
-                Text(
-                    text = "About",
-                    fontSize = 10.sp,
-                    color = Color.White,
-                    modifier = Modifier.clickable(
-                        indication = null,
-                        interactionSource = remember { MutableInteractionSource() }
-                    ) { onAboutClick() }
-                )
-            }
+            // About — subtle tap target
+            Text(
+                text = "About",
+                fontSize = 10.sp,
+                color = Color.White,
+                modifier = Modifier.clickable(
+                    indication = null,
+                    interactionSource = remember { MutableInteractionSource() }
+                ) { onAboutClick() }
+            )
         }
     }
 }

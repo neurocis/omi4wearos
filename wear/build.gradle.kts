@@ -1,8 +1,17 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
+
+// Read credentials from local.properties (never committed to git)
+val localProps = Properties().apply {
+    val f = rootProject.file("local.properties")
+    if (f.exists()) load(f.inputStream())
+}
+fun localProp(key: String) = localProps.getProperty(key, "")
 
 android {
     namespace = "com.omi4wos.wear"
@@ -14,6 +23,14 @@ android {
         targetSdk = 34
         versionCode = 12
         versionName = "1.12.0"
+
+        // Standalone Omi credentials — set in local.properties:
+        //   OMI_FIREBASE_WEB_API_KEY=AIzaSy...
+        //   OMI_FIREBASE_TOKEN=eyJ...
+        //   OMI_FIREBASE_REFRESH_TOKEN=AMf...
+        buildConfigField("String", "OMI_FIREBASE_WEB_API_KEY",  "\"${localProp("OMI_FIREBASE_WEB_API_KEY")}\"")
+        buildConfigField("String", "OMI_FIREBASE_TOKEN",         "\"${localProp("OMI_FIREBASE_TOKEN")}\"")
+        buildConfigField("String", "OMI_FIREBASE_REFRESH_TOKEN", "\"${localProp("OMI_FIREBASE_REFRESH_TOKEN")}\"")
     }
 
     buildTypes {
@@ -40,8 +57,6 @@ android {
         compose = true
         buildConfig = true
     }
-
-
 }
 
 dependencies {
@@ -96,8 +111,6 @@ dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.wear:wear:1.3.0")
 
-    // Standalone-only: direct Omi upload, QR setup, local web server
+    // Standalone: direct Omi upload over WiFi/BT-tethering
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation("com.google.zxing:core:3.5.3")
-    implementation("org.nanohttpd:nanohttpd:2.3.1")
 }
