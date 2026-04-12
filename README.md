@@ -1,195 +1,130 @@
-# omi4wOS — cipioh Direct Cloud Sync Edition
+# omi4wOS — Standalone Edition
 
-A multi-module Android/Kotlin project that transforms your WearOS watch into an incredibly efficient, natively integrated Omi speech companion. 
-
-Adapted the original version which performed Android transcription, **this cipioh-edition rewrite fundamentally redesigns the architectural flow to precisely emulate the Omi device.** The watch now generates native 16kbps Opus chunks, seamlessly streams them to the phone companion, and directly constructs Omi-compatible `.bin` archives that are pushed natively into Omi's `/v2/sync-local-files` cloud API for state-of-the-art server-side transcription and intelligence.
+A WearOS watch app that records audio, detects speech with a neural VAD, encodes to Opus, and uploads directly to Omi Cloud — **no phone companion app required**.
 
 <div align="center">
-  <img src="https://github.com/user-attachments/assets/7a3323c4-dd6b-4c02-98aa-8517d2c4012a" width="250" />
-  <img src="https://github.com/user-attachments/assets/b2f2af27-98ca-4cce-acf4-c0a4c465bcc1" width="250" />
-</div>
-<div align="center">
-  <img src="https://github.com/user-attachments/assets/b3d8a782-19c5-48a3-8126-73723b2e0fd2" width="250" />
-  <img src="https://github.com/user-attachments/assets/c5e20655-373e-4ad5-adcb-35589184247e" width="250" />
+  <img src="omi4wos-for-black.png" width="180" />
 </div>
 
-## Quick Install (Pre-compiled Releases)
-If you do not want to compile the code in Android Studio, you can natively download the fully packaged APK files directly from the `/releases` folder in this repository! 
+## Quick Install
 
-The phone companion APK is required for both watch builds. Pick the APKs that match your needs:
+Download the latest APK from the `releases/` folder in this repository and sideload it onto your WearOS watch via ADB:
 
-| File | Description |
+```bash
+adb install releases/Omi4wOS_Standalone_v1.12.apk
+```
+
+No phone app needed. The watch uploads directly to Omi over WiFi (or Bluetooth tethering).
+
+## First-Time Setup
+
+After installing, open the app and tap **Settings → Setup**.
+
+The watch starts a local web server and shows a QR code. Scan it with any phone or type the URL shown below the QR into any browser on the same WiFi network. **A computer is easiest.**
+
+The setup form asks for three values — all found in your browser's developer tools:
+
+### How to get your credentials
+
+1. Open **[app.omi.me](https://app.omi.me)** in Chrome on a computer.
+2. Log out, then sign in again with Google to ensure tokens are fresh.
+3. Open DevTools (`F12` or `Cmd+Option+I`).
+4. Go to the **Application** tab.
+5. In the left panel: **Storage → IndexedDB → firebaseLocalStorageDb → FirebaseLocalStorage**.
+6. Click the row starting with `firebase:authUser` to expand its value.
+
+From the expanded value:
+
+| Field in setup form | Where to find it |
 |---|---|
-| `Omi4wOS_Mobile_v2.0.apk` | **Recommended phone build.** Batch mode removed — streamlined UI, always-realtime upload. Install onto your **Android Phone**. |
-| `Omi4wOS_Wear_v2.0.apk` | **Recommended watch build.** Batch mode removed — always-realtime sync with 30-second debounce. Install via ADB onto your **Watch**. |
+| **Firebase Web API Key** | `apiKey` field directly in `firebase:authUser` (`AIzaSy…`) |
+| **Firebase Token** | `stsTokenManager → accessToken` (`eyJ…`) — expires in ~1h, auto-renewed |
+| **Refresh Token** | `stsTokenManager → refreshToken` (`AMf…`) — long-lived |
 
-Older builds are in `releases/archive/`. See [CHANGELOG](releases/CHANGELOG.md) for full history.
+Paste all three into the setup form and tap **Connect Watch**. The watch stores them and the setup screen shows a confirmation. You can close the browser tab.
 
-## Architecture
+Tokens are refreshed automatically before each upload — you only need to go through setup again if you change your Omi account.
+
+## Settings Screen
+
+The Settings screen (accessible from the home screen) shows:
+
+- **Auth status** — green ✓ if credentials are stored, red ✗ if not
+- **Upload log** — time, file size, and session count for recent uploads
+- **Setup button** — tap to re-run credential setup at any time
+
+## How It Works
 
 ```
 ┌──────────────────────────────────────┐
 │            WearOS Watch              │
 │                                      │
-│  AudioRecord  (16kHz PCM16 mono)     │
+│  AudioRecord (16kHz PCM16 mono)      │
 │       ↓                              │
 │  Loudness Gate (52dB RMS pre-filter) │
 │       ↓                              │
 │  Silero VAD LSTM (OnnxRuntime 1.14)  │
 │       ↓                              │
-│  Linear Buffer + Opus Encoder API    │
+│  Opus Encoder (16kbps, async)        │
 │       ↓                              │
-│  BLE Upload (30s debounce per sync)  │
-└──────────────────────────────────────┘
-              ↓  BLE/WiFi (Native Opus Streams)
-┌──────────────────────────────────────┐
-│          Phone Companion             │
-│                                      │
-│  WearableListener / Direct Receivers │
+│  ChunkRepository (store-and-forward) │
 │       ↓                              │
-│  Construct Omi (.bin) archive        │
+│  30s debounce → upload session       │
 │       ↓                              │
-│  Omi Cloud Core (/sync-local-files)  │
-│       ↓                              │
-│  Local SQLite Cache (Upload History) │
+│  Omi Cloud /v2/sync-local-files      │
+│  (Firebase bearer token, auto-renew) │
 └──────────────────────────────────────┘
 ```
 
-## Modules
-
-| Module    | Description                                      |
-|-----------|--------------------------------------------------|
-| `:shared` | Common data models, constants, Data Layer paths  |
-| `:wear`   | WearOS watch app — native AudioRecord, Silero LSTM VAD, and realtime Opus upload |
-| `:mobile` | Phone companion — Bluetooth aggregator, `.bin` compiler, and Firebase token auto-refresh |
+1. **Audio capture** — continuous 16kHz PCM16 mono via `AudioRecord`.
+2. **Loudness gate** — each 960ms window is checked against a 52dB RMS threshold before inference runs. Silence is skipped entirely.
+3. **Silero VAD** — an LSTM neural network evaluates each window that passes the gate, reporting a speech probability per 32ms frame. Windows with ≥4 frames above 0.5 are flagged as speech.
+4. **Opus encoding** — flagged windows are encoded at 16kbps on a dedicated IO coroutine (non-blocking).
+5. **Store-and-forward** — chunks are written to the watch's internal filesystem immediately. If the upload fails, they stay on disk and are retried at the next opportunity.
+6. **30-second debounce** — after a speech segment ends, the service waits 30 seconds before uploading, so consecutive segments from a continuous conversation land in a single Omi conversation rather than being fragmented.
+7. **Session splitting** — segments separated by more than 5 minutes are uploaded as separate Omi conversations.
+8. **Token refresh** — if the Firebase token has expired, it is exchanged for a new one using the stored refresh token before the upload proceeds. A 401 response triggers a forced refresh and one retry.
 
 ## Tech Stack
 
-| Component         | Technology                              |
-|-------------------|-----------------------------------------|
-| Language          | Kotlin                                  |
-| UI (Watch/Phone)  | Jetpack Compose + Material3             |
-| VAD               | Silero LSTM via OnnxRuntime 1.14.0      |
-| Audio Encoding    | Opus via Android MediaCodec 16kbps      |
-| Cloud Upload      | Multipart POST v2/sync-local-files      |
-| Authentication    | Omi Firebase IndexedDB tokens           |
+| Component | Technology |
+|---|---|
+| Language | Kotlin |
+| UI | Jetpack Compose (Wear Material) |
+| VAD | Silero LSTM via OnnxRuntime 1.14.0 |
+| Audio encoding | Opus via Android MediaCodec 16kbps |
+| Networking | OkHttp 4.12 — multipart POST |
+| Setup server | NanoHTTPD 2.3.1 |
+| QR generation | ZXing Core 3.5.3 |
+| Cloud API | Omi `/v2/sync-local-files` |
+| Authentication | Firebase token (auto-refresh via `securetoken.googleapis.com`) |
 
-## Prerequisites
+## Build from Source
 
-- Android Studio Hedgehog (2023.1.1)+
+### Prerequisites
+
+- Android Studio Hedgehog (2023.1.1) or later
 - JDK 17, Android SDK 34
 - A WearOS watch (Android 11+)
-- An Android phone (Android 9+)
 
-## Configuration & Cloud Setup
+### Optional: bake credentials into the build
 
-To interface perfectly with Omi Cloud natively, this system securely routes through Omi's Firebase Backend. You have to provide your device with your session tokens extracted from your browser.
+If you want credentials pre-loaded without going through setup, add to `local.properties`:
 
-1. Open exactly **[app.omi.me](https://app.omi.me)** in Chrome and sign in to your dashboard.
-2. Open Chrome Developer Tools (`F12` or `Cmd+Option+I`)
-3. **Grab the ID Token:** Navigate to the `Network` tab, reload the page, click any request, look at the Request Headers, and copy the long string after `Authorization: Bearer `.
-4. **Grab the Refresh Token & API Key:** Navigate to the `Application` tab. Open `IndexedDB` → `firebaseLocalStorageDb`. Copy the `refreshToken` from your user block. Also grab the `AIza...` Web API key from any network request URL parameter.
-5. Paste these into your **omi4wOS Companion Settings UI**. The app will natively auto-renew your token forever!
+```
+OMI_FIREBASE_WEB_API_KEY=AIzaSy...
+OMI_FIREBASE_TOKEN=eyJ...
+OMI_FIREBASE_REFRESH_TOKEN=AMf...
+```
 
-## How It Works
+These are injected as `BuildConfig` fields and seeded into SharedPreferences on first launch. The web setup flow still works and will overwrite them.
 
-1. **Watch**: Continuously monitors audio by routing microphone polling buffers into the DSP every `960ms`, ensuring the OS CPU can sleep between reads.
-2. **Loudness Gate**: Each 960ms window is checked against a 52dB RMS threshold before any inference runs. Windows below the threshold are skipped entirely, keeping the CPU idle during silence.
-3. **Silero VAD**: An LSTM neural network (Silero) evaluates each window that passes the loudness gate. It classifies 30 × 32ms frames per window and reports a speech probability per frame. Windows with ≥4 frames above 0.5 probability are flagged as speech.
-4. **Local Caching**: Audio containing voice activity is Opus-encoded and immediately serialized to the watch's internal filesystem. This ensures no data is lost if the watch is away from the phone.
-5. **Data Transmission**: Once a sentence concludes, the watch starts a 30-second debounce timer. When the timer fires (or is reset by a new segment ending), the watch evaluates Bluetooth connectivity and pushes all pending segments to the phone in a single sync session. This debounce window ensures consecutive 60-second max-segments from a long conversation land in one Omi conversation rather than being fragmented. If the phone is disconnected, segments are retained on disk and flushed when connectivity is restored — an hourly fallback sync in the connectivity poll loop handles this automatically.
-6. **Phone**: The companion app listens on the Data Layer, assembling the received Opus payloads into an `.bin` archive.
-7. **Cloud Upload**: The phone pushes the compiled `.bin` archive into the Omi Cloud using standard Firebase Authentication tokens.
+### Build
 
-## What's New in v2.0 (Wear + Mobile)
-
-**Architecture: Batch Mode Removed**
-
-A controlled 30-minute battery test was run with all non-BT radios off and constant dialog audio to measure the real-world impact of stream mode selection:
-
-- Realtime mode (sync per completed segment): **~1% / 5 min**
-- Batch mode (no Bluetooth transfers during recording): **~1% / 5 min**
-
-The results were identical. Bluetooth data transfer is not a meaningful contributor to watch battery drain. The dominant costs are the always-on microphone and the `PARTIAL_WAKE_LOCK` required to keep the CPU awake for AudioRecord — both of which are fixed costs regardless of upload frequency.
-
-**What was removed**
-- Stream mode card (Realtime / Batch toggle) from the phone companion UI
-- Batch interval dropdown (all minute-based and clock-aligned options)
-- Force Sync button from the phone companion UI
-- `SET_STREAM_MODE` command and all related constants, prefs keys, and scheduling logic
-
-**What the watch does now**
-The watch uses a single upload strategy: after each completed speech segment, a 30-second debounced sync job is scheduled. Consecutive segments within the window are all included in one `performSync()` call, ensuring they land in one Omi conversation. An hourly fallback in the connectivity loop handles BT-reconnect scenarios.
-
----
-
-## What's New in v1.11 (Wear) / v1.9 (Mobile)
-
-**Wear v1.11**
-- **Batch sync incomplete segments fixed**: Force sync or scheduled sync during active speech sent only `isFinal=false` chunks — the phone would show "Receiving audio…" but never complete the segment or trigger an upload. `performSync()` now closes the in-progress segment before syncing, ensuring the phone always receives a `isFinal=true` chunk.
-
-**Mobile v1.9**
-- **Upload retry data loss fixed**: Failed batch uploads were having their audio file deleted immediately on failure, making retry impossible. File is now preserved until confirmed upload success.
-- **Background upload retry**: WorkManager retries failed uploads automatically every 15 minutes when a network connection is present.
-- **Double-delivery dedup race fixed**: Concurrent message delivery from two listeners was corrupting segment assembly, causing `triggerTranscription()` to never be called. Fixed with a synchronized dedup gate at message entry.
-- **Compact watch connection card**: Single-row layout — button drives card height, custom watch icon sized to match (36dp). Height is static when connected or disconnected.
-- **Compact stream mode card + interval button**: Tighter layout, interval button now matches height of Realtime/Batch buttons.
-
-## What's New in v1.10
-
-- **First word clipping fixed**: Onset detection now always requires 1 VAD frame (960ms) instead of 2 in idle mode. Combined with the extended pre-roll, sentence-opening words are reliably captured even after extended silence.
-- **Pre-roll extended to 3.5s**: Was 2.5s. Provides 2.54s of audio context before the detected speech onset, eliminating cold-start clipping.
-- **Async Opus encoding**: The classification thread no longer blocks on MediaCodec. Raw PCM is queued (~1ms) to a dedicated `Dispatchers.IO` encoder coroutine, freeing the classification thread to sleep for its full 960ms cycle. Trace data showed the previous synchronous encode was blocking the thread for ~360ms wall time per speech cycle.
-- **Integer loudness gate**: `calculateRmsDb()` (15k float divisions + sqrt + log10 every cycle) replaced with a fast integer energy comparison — same threshold, no floating-point math.
-- **Idle classification rate**: 3× slower than active (3000ms vs 960ms) after 30s of silence, down from the previous 2× (1920ms).
-
-## What's New in v1.9
-
-- **No UI animations**: Removed all Compose animations from the watch app (pulsing scale, animated colour transitions, halo fade). State changes are now instant. Continuous animations were driving GPU/RenderThread work throughout the entire listening phase — the primary source of background battery drain identified via system trace.
-- **Removed `TimeText()` from the watch screen**: Wear Compose's `TimeText` keeps a coroutine alive that ticks every second in interactive mode, keeping a Choreographer frame scheduled continuously. Removed — the watch's own ambient display already shows the time.
-- **Deduplicated foreground notification updates**: `updateNotification()` now skips `nm.notify()` if the notification text hasn't changed, eliminating redundant system-level redraws at speech segment boundaries.
-- **Idle classification slowdown after 30 s** (was 5 minutes): The VAD classification loop drops from 960ms to 1920ms polling rate after 30 seconds of continuous silence instead of 5 minutes. During a quiet period the watch now halves its CPU duty cycle within 30 seconds rather than continuing at full rate for the entire gap. No impact on detection — the existing 5.76s silence-offset threshold (`speechOffsetFrames`) handles natural pauses before the idle rate can ever engage.
-
-## What's New in v1.8
-
-- **Logo title**: The omi4wearOS logo image replaces the plain text title on the phone home screen.
-- **Redesigned watch card**: "Watch Connected / Disconnected" status is now a clear title at the top of the card. The watch icon (80dp) and Start/Stop button share a clean row below it.
-
-## What's New in v1.7
-
-- **Batch sync race condition fixed**: Audio chunks on the `/audio/speech/` Data Layer path can arrive before `CMD_SYNC_START` on `/audio/control/` because the Wear Data Layer does not guarantee cross-path message ordering. Previously those early-arriving segments fell through to the realtime upload path and each became a separate Omi conversation. Now all batch-mode segments are buffered regardless of whether the syncId has arrived yet, and any that raced ahead are absorbed into the correct session at flush time.
-- **Natural pause threshold raised**: Silence offset raised from 3 → 6 consecutive VAD windows (≈2.9s → 5.8s). Breath pauses and mid-sentence thinking pauses no longer end the current segment prematurely.
-- **Batch flush delay**: Increased from 500ms → 2000ms so the last in-flight segment always lands in the buffer before it is flushed.
-
-## What's New in v1.5
-
-- **Batch Upload Grouping**: Fixed a conversation fragmentation bug where each speech segment in a batch sync was uploaded as an independent Omi job. The Omi backend had no way to link them, so one hour of audio became dozens of separate conversations. Now all segments from a sync session are buffered on the phone and flushed as a **single multipart POST** when the watch signals session end — exactly how the Omi pendant itself uploads.
-- **Temporal Session Splitting**: Within a batch flush, segments separated by more than 5 minutes are recognized as genuinely distinct conversations and sent as separate uploads. Segments within the same continuous session always land in the same Omi conversation.
-- **Watch Session Signaling**: The watch now sends a `CMD_SYNC_END` message after transmitting all pending chunks, giving the phone a reliable trigger to flush its buffer. Previously the phone had no way to know when a sync session was complete.
-
-## What's New in v1.4
-
-- **Clock-Aligned Sync Intervals**: Two new batch interval options — `:00` and `:30`. `:00` syncs once per hour at the top of the hour. `:30` syncs twice per hour, at :00 and :30. Both compare against the most recently passed clock boundary rather than counting down from last sync, so uploads happen at predictable wall-clock times no matter when the app started.
-- **Watch Service Crash Fix**: Fixed an overnight crash caused by a `START_STICKY` null-intent restart. When Android's battery optimizer kills the foreground service and the OS restarts it, `onStartCommand` receives a null intent. Previously this fell through without calling `startForeground()`, causing an immediate re-kill. Now the watch reads a persisted `recording_enabled` flag from SharedPreferences on restart — if recording was active when killed, it resumes automatically; otherwise it shuts down cleanly.
-- **Realtime Stream Mode** *(introduced in v1.3)*: Uploads each completed speech segment to Omi immediately after it ends. Toggle between Realtime and Batch from the phone companion UI.
-- **Configurable Batch Interval** *(introduced in v1.3)*: Choose from `:00`, `:30`, 5, 10, 15, 30, 60, 90, or 120 minutes. Default is 60 minutes. Setting is persisted and pushed to the watch automatically.
-- **Force Sync removed in Realtime Mode** *(introduced in v1.3)*: Replaced with a "● Realtime Mode" indicator when per-segment syncing is active.
-
-## Key Upgrades from Original Base
-
-- **Direct Cloud Integration:** Removed Android SpeechRecognizer, assembling standard Limitless-compatible `.bin` archives that upload directly to the `/v2/sync-local-files` endpoint.
-- **Silero LSTM VAD:** Replaced the TFLite YAMNet classifier with Silero, a purpose-built voice activity detection LSTM trained specifically to distinguish human speech from environmental noise. See [VAD Selection Rationale](#vad-selection-rationale) below.
-- **BLE Batch Transfer:** Changed the transmission behavior from streaming every second to batch-transmitting the completed payload at the end of a phrase to reduce radio activity.
-- **Store-and-Forward Caching Engine:** Includes a local disk-caching mechanism (`ChunkRepository`). If Bluetooth connection drops, the watch saves up to 500MB of Opus audio to disk. A background worker syncs the missed files chronologically upon reconnection.
-- **Duplicate Audio Prevention**: Companion dual-listeners track immutable Chunk Index IDs to drop stuttering or duplicated chunks in bad connections.
-- **Dynamic Conversational Hysteresis**: Switches detection sensitivity between Idle Mode (2 consecutive positive windows required) and Active Conversation Mode (1 window sufficient), preventing false positives during silence while remaining responsive mid-conversation.
-- **Pre-roll Buffer**: Retains 1.5s of audio prior to speech onset to prevent sentence cut-off when transitioning from idle, without the encoding overhead of longer buffers.
-- **Idle Power Throttling**: Classification interval slows to 3000ms after 30s of silence (v1.10), down from 1920ms (v1.9) and 5 minutes (original). Connectivity polling reduced from 30s to 2 minutes. All UI animations removed in v1.9.
-- **Async Encoding Pipeline** (v1.10): Opus encoding runs on a dedicated IO coroutine, removing a ~360ms MediaCodec block from the classification thread every speech cycle.
-- **Pre-roll Buffer**: 3.5s of audio before speech onset (v1.10), up from 2.5s, preventing first-word clipping in cold-start mode.
-- **Background Upload Retry**: Failed `.bin` uploads are cached natively in a local Room database and re-attempted on next internet connection.
-
----
+```bash
+./gradlew :wear:assembleRelease
+# APK: wear/build/outputs/apk/release/wear-release.apk
+```
 
 ## VAD Selection Rationale
 
@@ -202,27 +137,17 @@ The Galaxy Watch 7 runs a 32-bit ARM processor (`armeabi-v7a`). This is a hard c
 ### Options Evaluated
 
 **WebRTC GMM (original)**
-The watch originally used a WebRTC Gaussian Mixture Model — a very fast native C++ classifier from the Chromium telephony stack. It is essentially zero-cost in battery and CPU terms. However it was designed for phone call quality improvement, not ambient monitoring. In practice it generated significant false positives from:
-- Fan and HVAC noise (broadband, classified as speech)
-- Motorcycle and engine sounds (harmonic content in the speech frequency range)
-- Clothing rustle and watch movement
-
-Tuning attempts (raising thresholds, adding energy variance checks, adding pitch detection and pitch stability gates) progressively reduced false positives but could not fully solve the problem without also missing real speech.
+The watch originally used a WebRTC Gaussian Mixture Model — a very fast native C++ classifier from the Chromium telephony stack. It is essentially zero-cost in battery and CPU terms. However it was designed for phone call quality improvement, not ambient monitoring. In practice it generated significant false positives from fan and HVAC noise (broadband, classified as speech), motorcycle and engine sounds (harmonic content in the speech frequency range), and clothing rustle and watch movement.
 
 **Silero via OnnxRuntime (attempted)**
-Silero is an LSTM neural network trained specifically on the task of "is this human speech or not?" across thousands of hours of diverse real-world audio. The `gkonovalov/android-vad` library bundles the Silero ONNX model with OnnxRuntime as its inference backend.
-
-This initially crashed with `SIGBUS BUS_ADRALN` (bus error, unaligned memory access) on every launch. The root cause: OnnxRuntime's armeabi-v7a native build uses ARM NEON SIMD instructions that require 16-byte memory alignment, but its protobuf-based model parser performs unaligned reads on internal buffers — a bug present in OnnxRuntime 1.15–1.20 on 32-bit ARM. Loading the model via file path (mmap) rather than byte array was attempted but the crash site was in the parser itself, not the loader.
-
-**Silero TFLite**
-The Silero team does not provide a TFLite export and has stated they are not willing to produce one. This path is unavailable without converting the model yourself offline (ONNX → TF SavedModel → TFLite), which is non-trivial and may produce a broken graph due to LSTM op compatibility issues.
+Silero is an LSTM neural network trained specifically on the task of "is this human speech or not?" across thousands of hours of diverse real-world audio. This initially crashed with `SIGBUS BUS_ADRALN` on every launch. The root cause: OnnxRuntime's armeabi-v7a native build uses ARM NEON SIMD instructions that require 16-byte memory alignment, but its protobuf-based model parser performs unaligned reads on internal buffers — a bug present in OnnxRuntime 1.15–1.20 on 32-bit ARM.
 
 **YAMNet TFLite**
-YAMNet is a TFLite-backed audio event classifier originally used in this project. TFLite has proper armeabi-v7a support. However it was replaced previously specifically because of battery drain — YAMNet processes audio at 975ms windows with a significantly heavier inference cost than Silero, and the original implementation ran it on every frame continuously rather than gating it.
+TFLite has proper armeabi-v7a support. However it was replaced previously specifically because of battery drain — YAMNet processes audio at 975ms windows with a significantly heavier inference cost than Silero.
 
 ### The Fix
 
-OnnxRuntime **1.14.0** does not have the armeabi-v7a alignment bug present in later versions. By pinning to 1.14.0 (and excluding the version pulled in transitively by the gkonovalov silero library), Silero initializes and runs inference correctly on the Galaxy Watch 7.
+OnnxRuntime **1.14.0** does not have the armeabi-v7a alignment bug present in later versions. By pinning to 1.14.0:
 
 ```kotlin
 implementation("com.github.gkonovalov.android-vad:silero:2.0.7") {
@@ -231,9 +156,9 @@ implementation("com.github.gkonovalov.android-vad:silero:2.0.7") {
 implementation("com.microsoft.onnxruntime:onnxruntime-android:1.14.0")
 ```
 
-The model is also extracted from APK assets to `filesDir` on first launch and loaded via file path rather than byte array, keeping memory access patterns as safe as possible.
+The model is extracted from APK assets to `filesDir` on first launch and loaded via file path rather than byte array.
 
-### Why Silero Over the Alternatives
+### Comparison
 
 | | WebRTC GMM | YAMNet | Silero |
 |---|---|---|---|
