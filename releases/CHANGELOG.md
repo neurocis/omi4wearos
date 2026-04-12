@@ -1,234 +1,77 @@
 # Changelog
 
-## v2.0 (Wear + Mobile) — 2026-04-12
+## v1.12 (Standalone) — 2026-04-12
 
-### Architecture Change: Batch Mode Removed
-
-**Battery test results**
-
-Controlled 30-minute test with all non-BT radios off, screen allowed to sleep normally, constant dialog audio playing:
-
-| Mode | Drain rate |
-|---|---|
-| Realtime (sync per segment) | ~1% / 5 min |
-| Batch (no sync until stop) | ~1% / 5 min |
-
-Both modes consumed identical battery. Bluetooth data transfer is not a meaningful contributor to watch drain. The dominant costs are the always-on microphone and the `PARTIAL_WAKE_LOCK` (which prevents any CPU deep-sleep state). Stream mode selection provided zero measurable benefit.
-
-Baseline drain on this watch (Galaxy Watch 7, 300 mAh, ~1 year old) is 4–6%/hr without the app. Recording adds ~18–24 mAh/hr above that baseline — 2–3× normal — regardless of how frequently data is transmitted to the phone.
-
-**What was removed**
-- Realtime / Batch stream mode card and toggle (phone UI)
-- Batch interval dropdown (5, 10, 15, 30, 60, 90, 120 min; `:00` / `:30` clock-aligned options)
-- `SET_STREAM_MODE` Data Layer command
-- `shouldSyncNow()` clock-aligned sync scheduling on the watch
-- Force Sync button from the phone UI
-- `streamMode` / `batchInterval` from `OmiConfig`, `HomeUiState`, `HomeViewModel`
-- `STREAM_MODE_REALTIME`, `STREAM_MODE_BATCH`, `PREF_STREAM_MODE`, `PREF_BATCH_INTERVAL`, `DEFAULT_BATCH_INTERVAL`, `BATCH_CLOCK_HOUR`, `BATCH_CLOCK_HALF` from shared `Constants`
-- `CMD_SET_STREAM_MODE` from `DataLayerPaths`
-
-**What the watch does now**
-- After each completed speech segment, a 30-second debounced upload job fires. Consecutive 60-second max-segments that arrive within that window are all included in one `performSync()` call, landing in one Omi conversation.
-- A hourly fallback sync in the connectivity poll loop handles BT-reconnect scenarios and catches any chunks missed by the per-segment path.
-- `CMD_FORCE_SYNC` is still handled by `WatchCommandReceiver` for store-and-forward reconnection cases.
-
-**Phone UI**
-- Stream mode card removed entirely
-- Force Sync button removed
-- Upload Failures counter and Retry icon remain
-- `AudioUploadService` always buffers segments by syncId and flushes on `CMD_SYNC_END` (the grouping that prevents conversation fragmentation on Omi's backend)
-
----
-
-## v1.11 (Wear) / v1.9 (Mobile) — 2026-04-12
-
-### Wear (`Omi4wOS_Wear_v1.11.apk`)
-
-**Fixed**
-- **Batch sync incomplete segments**: When a force sync or scheduled sync fired while a speech segment was actively in progress, all chunks for that segment had `isFinal=false`. The phone received them and waited indefinitely for a final chunk that never arrived — resulting in the "Receiving audio…" indicator appearing but nothing in the upload log. `performSync()` now closes any in-progress segment (emitting `isFinal=true`) before reading the pending chunk list and sending `SYNC_START`. This only affects batch mode; realtime mode transmits the final chunk naturally when silence is detected.
-- **`isInSpeechSegment` marked `@Volatile`**: Ensures the sync coroutine always reads the authoritative value written by the classification thread.
-
-### Mobile (`Omi4wOS_Mobile_v1.9.apk`)
-
-**Fixed**
-- **Upload retry deleting audio on failure**: In batch mode, `AudioUploadService.uploadSession()` called `binFile.delete()` on both the null-result and exception failure paths, erasing the only copy of the audio before retry could attempt it. The file is now preserved on failure and only deleted on confirmed success.
-- **Retry grouped by syncId**: The old retry logic re-attempted uploads 1:1 per database record, but batch mode creates one `.bin` file covering N segments. Retry now groups pending records by `syncId` and re-uploads the shared file once per group, matching how the original upload was structured.
-- **Double-delivery race causing zero completed segments**: Both `AudioReceiverService` (WearableListenerService) and the direct `MessageClient` listener in `HomeViewModel` receive every watch message. The previous per-chunk dedup used a non-thread-safe `mutableListOf()` inside a `ConcurrentHashMap`, so the final chunk's segment could be consumed with an empty list — `triggerTranscription()` was never called. Fixed with a synchronized `LinkedHashSet` dedup at `processMessage()` entry; duplicates are rejected before any chunk is processed.
-- **Thread-safe segment assembly**: `activeSegments` values changed from `mutableListOf()` to `Collections.synchronizedList(mutableListOf())` to prevent concurrent-insert corruption.
+### Settings screen, upload log, auth status
 
 **Added**
-- **Background upload retry (WorkManager)**: `UploadRetryWorker` runs every 15 minutes when a network connection is available, automatically re-attempting any pending uploads without user interaction. Scheduled on app launch via `ExistingPeriodicWorkPolicy.KEEP` so only one instance ever runs.
+- **Settings screen**: accessible from the home screen. Shows auth status (✓ credentials set / ✗ not configured), upload log, Setup button, and full credential-retrieval instructions.
+- **Upload log**: last 20 upload results stored in SharedPreferences — each entry shows time, file size (KB), session count, and success/failure.
+- **`StandaloneOmiApiClient`**: writes a log entry after every upload attempt.
+- **SetupScreen**: IP:Port URL shown below the QR code. Instructions note that a computer is easiest.
+- **SetupServer HTML + SettingsScreen instructions**: all three credential values (`apiKey`, `accessToken`, `refreshToken`) are found in the same DevTools location — Application → Storage → IndexedDB → `firebaseLocalStorageDb` → `FirebaseLocalStorage` → `firebase:authUser`. No Network tab required.
 
 **Changed**
-- **Compact watch connection card**: Replaced the tall two-row card layout (80dp icon + stacked text) with a single-row design. The Start/Stop button drives the card height; the custom watch icon is fixed at 36dp to match. Card height is static whether connected or disconnected — button is always rendered, invisible (`alpha=0`) and disabled when disconnected.
-- **Compact stream mode card**: Removed "Sync Mode" and "Interval (min)" labels, reducing to a single tight row of buttons.
-- **Interval button sizing**: Removed hardcoded `width(140.dp)` and constrained text to `maxLines=1`, making the interval button the same height as the Realtime/Batch buttons.
+- HomeScreen bottom link: "Setup" → "Settings"; credential setup is now nested inside the Settings screen.
+- Navigation: `settings` route added to `WearApp`; `setup` route navigated from within Settings.
 
 ---
 
-## v1.10 — 2026-04-11
+## v1.11 (Standalone) — 2026-04-12
 
-### Wear (`Omi4wOS_Wear_v1.10.apk`)
+### Upload fixes: 401 token refresh + 422 field name
 
 **Fixed**
-- **First word clipping**: The silence-onset guard required 2 consecutive VAD-positive windows (1.92s) before starting a segment when the watch had been quiet for more than 60 seconds. This pushed the effective capture window too close to the speech start, causing the first word to fall outside the pre-roll buffer. Onset is now always 1 frame (960ms), matching the active-conversation behaviour — the double-gate was redundant given the 52dB loudness gate + Silero VAD already filtering false positives.
-- **Pre-roll extended**: `PRE_ROLL_SECONDS` increased from 2.5s → 3.5s. Provides 2.54s of audio context before the detected speech onset (3.5s − 0.96s), comfortably capturing sentence-opening words even in cold-start (idle) mode.
-
-**Changed**
-- **Async Opus encoding pipeline**: Opus encoding and disk writes are now handled by a dedicated `Dispatchers.IO` coroutine (`encoderLoop`). The classification thread queues raw PCM into an unlimited `Channel<EncodeRequest>` (~1ms) and immediately returns to sleep. Previously the classification thread blocked on MediaCodec for ~360ms per speech cycle (wall: 424ms avg, CPU: 64ms avg — a 360ms kernel wait that prevented CPU deep-sleep between cycles).
-- **Integer loudness gate**: Replaced `calculateRmsDb()` (float division × 15 360 samples, sqrt, log10) with `isLoudEnough()` — an integer energy sum comparison against a pre-computed threshold. Mathematically equivalent, eliminates all floating-point math from every classification cycle.
-- **Idle classification interval**: 1920ms → 3000ms. Classification loop runs 3× slower than the active rate (960ms) after 30s of silence, reducing CPU wakeups from 30/min to 20/min during quiet periods.
-- **Trace markers added**: `android.os.Trace` sections added around `vad:classify`, `vad:loudness_gate`, `vad:buffer_read`, `vad:opus_encode`, `vad:chunk_save`, `vad:speech_frame`, `vad:extract_chunk`, `vad:preroll` for Perfetto/Studio profiler visibility.
+- **HTTP 401 on upload**: pasted Firebase `idToken` may already be expired when entered via web setup. `tokenExpiresAtSecs` is now stored as `0` when credentials are received from the setup form, forcing a token exchange before the first upload attempt. A 401 response from the API also triggers a forced refresh and one retry.
+- **HTTP 422 on upload**: multipart field name was `"audio_file"` — the Omi API requires `"files"`. Fixed to match.
 
 ---
 
-## v1.9 — 2026-04-11
+## v1.10 (Standalone) — 2026-04-12
 
-### Wear (`Omi4wOS_Wear_v1.9.apk`)
-
-**Changed**
-- **Removed all UI animations**: Eliminated the infinite pulsing scale animation, animated colour transitions (`animateColorAsState`, `animateFloatAsState`), and the halo fade effect from the recording button. All states (idle, listening, speech detected) are now represented by instant static colour changes. Continuous animations were the primary source of GPU/RenderThread activity during the listening phase.
-- **Removed `TimeText()` from the app screen**: The Wear Compose `TimeText` composable subscribes to a system clock tick every second in interactive mode, keeping a Choreographer frame scheduled continuously. Removed from the app UI — the watch's own ambient display already shows the time.
-- **Deduplicated foreground notification updates**: `AudioCaptureService.updateNotification()` now tracks the last-posted text and skips `nm.notify()` if the content hasn't changed, eliminating redundant system-level redraws at speech segment boundaries.
-- **Idle classification slowdown after 30 s** (was 5 minutes): The classification loop drops from its active 960ms polling rate to the slower 1920ms idle rate after just 30 seconds of continuous silence, rather than 5 minutes. During a typical quiet period between conversations the watch was previously running at full polling rate for the entire gap; it now halves its CPU duty cycle within half a minute of silence. No impact on detection latency — the existing 5.76s silence-offset threshold (`speechOffsetFrames`) already handles natural pauses long before the idle slowdown kicks in.
-
----
-
-## v1.8 — 2026-04-10
-
-### Mobile (`Omi4wOS_Mobile_v1.8.apk`)
+### Logo + web setup restored
 
 **Changed**
-- Home screen title is now the omi4wearOS logo image instead of plain text.
-- Watch connection card redesigned: "Watch Connected / Disconnected" status moved to the top of the card as a title; icon resized to 80dp; icon and Start/Stop button share a clean row below the title.
-
----
-
-## v1.7 — 2026-04-10
-
-### Mobile (`Omi4wOS_Mobile_v1.7.apk`)
+- Logo updated to `omi4wos-for-black.png` (dark background optimised variant).
 
 **Fixed**
-- Batch sync fragmentation (race condition): audio chunks on the `/audio/speech/` Data Layer path can arrive and be fully assembled before the `CMD_SYNC_START` control message on `/audio/control/` is processed, because the Wear Data Layer does not guarantee cross-path ordering. When this happened, segments received with an empty syncId fell through to the realtime upload path and each became its own independent Omi conversation. Now all segments in batch mode are buffered regardless of whether the syncId has arrived yet; segments that raced ahead are absorbed into the correct syncId at flush time.
-- Batch flush delay increased from 500ms → 2000ms to give in-flight segment coroutines more time to complete before the buffer is snapshotted.
-- Home screen title trimmed to "omi4wOS", watch card icon updated to the custom omi4wearOS asset, misleading (non-realtime) battery level removed from the card.
-
-### Wear (`Omi4wOS_Wear_v1.7.apk`)
-
-**Fixed**
-- Natural speech pauses (breaths, mid-sentence thinking pauses) were ending the current recording segment prematurely. The silence offset threshold was raised from 3 → 6 consecutive 960ms VAD windows (≈2.9s → 5.8s), giving the speaker time to breathe or pause without fragmenting a single conversation into many short clips.
+- Web setup (NanoHTTPD QR flow) restored. Credentials can be updated at any time without changing source code.
 
 ---
 
-## v1.6 — 2026-04-10
+## v1.9 (Standalone) — 2026-04-12
 
-### Mobile (`Omi4wOS_Mobile_v1.6.apk`)
+### Setup form: 3-field credential entry
 
 **Changed**
-- App icon: bezel ring tightened to radius 30 (was 40) and mic rescaled to 1.8× so all artwork sits safely inside the launcher mask's clip boundary on all Android icon shapes.
+- Setup form replaced email/password with three direct credential fields: Firebase Web API Key, Firebase Token (`accessToken`), Refresh Token — matching the values used in the companion app and obtainable from browser DevTools without a server-side login call.
+- `StandaloneOmiConfig.saveFromSetup()` stores all three values; `Credentials.isConfigured` requires `firebaseWebApiKey` and `refreshToken` to be non-blank.
 
 ---
 
-### Wear (`Omi4wOS_Wear_v1.6.apk`)
+## v1.8 (Standalone) — 2026-04-12
 
-**Changed**
-- Home screen redesigned around a single circular 72dp toggle button with three visual states: dark-slate (idle), indigo pulse (recording / silence), green pulse (speech detected), deep-red (permission missing). Pulse speed and amplitude are keyed to state — fast and large during speech, slow and subtle while listening.
-- Haptic tick on every recording toggle.
-- Phone-connected indicator (dot + label) replaces the old Chip row.
-- App icon: same safe-zone fix as mobile.
+### Initial standalone release
 
----
+First build of the standalone watch app — no phone companion required.
 
-## v1.5 — 2026-04-10
+**Architecture**
+- Watch records audio, detects speech (Silero VAD), encodes to Opus 16kbps, and uploads directly to `api.omi.me/v2/sync-local-files` over WiFi (or Bluetooth tethering).
+- No Data Layer, no phone app, no `AudioReceiverService`.
 
-### Mobile (`Omi4wOS_Mobile_v1.5.apk`)
+**Credential setup**
+- NanoHTTPD server on port 8080 serves a setup form.
+- Watch displays a QR code encoding `http://<wifi-ip>:8080`; user scans on any phone or types the URL into any browser.
+- Credentials stored in SharedPreferences; optionally baked in at build time via `local.properties` → `BuildConfig`.
 
-**Fixed**
-- Conversation fragmentation in batch mode: segments from the same sync session were each uploaded as independent Omi jobs, causing one hour of audio to appear as dozens of separate conversations in the app. Batch mode now buffers all segments for a sync session and flushes them as a single multipart `POST /v2/sync-local-files` when the session ends, matching how the Omi pendant itself uploads.
+**Upload pipeline**
+- OkHttp multipart POST, field name `"files"`, filename `recording_fs320_<timestamp>.bin`.
+- Firebase token auto-refresh via `securetoken.googleapis.com/v1/token`.
+- 30-second debounce after each speech segment — consecutive segments land in one Omi conversation.
+- 5-minute gap detection splits genuinely separate sessions into separate conversations.
+- Store-and-forward via `ChunkRepository` — failed uploads stay on disk and are retried.
 
-**New**
-- Temporal session grouping: within a batch flush, segments separated by more than 5 minutes are split into separate uploads (genuinely different conversations), matching the gap-detection logic used by `sync_omi_cloud.py`.
-
----
-
-### Wear (`Omi4wOS_Wear_v1.5.apk`)
-
-**New**
-- Sends `CMD_SYNC_END` after `syncPendingChunks()` completes, signaling the phone to flush its batch buffer. Previously the phone had no way to know when a sync session was finished.
-
----
-
-## v1.4 — 2026-04-10
-
-### Mobile (`Omi4wOS_Mobile_v1.4.apk`)
-
-**New**
-- Realtime Stream mode: each completed speech segment is synced to the phone and uploaded to Omi immediately after it ends, minimising latency between speech and cloud availability.
-- Batch Stream mode with a user-configurable interval — choose from `:00`, `:30`, 5, 10, 15, 30, 60, 90, or 120 minutes (default 60). Setting is persisted in DataStore and pushed to the watch over the Data Layer automatically.
-- Sync Mode card on the home screen with a Realtime/Batch toggle and an interval dropdown (batch mode only).
-- When Realtime Stream is active the Force Sync button is replaced with a "● Realtime Mode" indicator — manual triggers are unnecessary when every segment already syncs on completion.
-
-**Changed**
-- Batch interval is now a dropdown picker instead of a free-text field, preventing a command storm to the watch on every keystroke.
-
----
-
-### Wear (`Omi4wOS_Wear_v1.4.apk`)
-
-**New**
-- Receives `SET_STREAM_MODE` command from phone and stores the selected mode and batch interval in SharedPreferences (survives service restarts).
-- In Realtime mode: triggers an immediate `performSync()` after every finalized speech segment.
-- In Batch mode: scheduled sync loop now reads the configured interval from prefs instead of using the hardcoded 60-minute constant.
-- Clock-aligned sync intervals: `:00` syncs at the top of each hour; `:30` syncs at :00 and :30 of each hour. Both modes compare the last sync time against the most recently passed clock boundary rather than counting down from last sync.
-
-**Fixed**
-- Service crash on OS kill (overnight battery optimization): `START_STICKY` was restarting the service with `intent=null`, but the null branch fell through without calling `startForeground()`, causing an immediate re-kill. Now the null-intent restart reads `PREF_RECORDING_ENABLED` from SharedPreferences — if recording was active when killed, it resumes automatically; otherwise the service shuts down cleanly.
-
----
-
-## v1.2 — 2026-04-09
-
-### Mobile (`Omi4wOS_Mobile_v1.2.apk`)
-
-**New**
-- Upload tracking via Room database (`UploadRepository`) — every segment upload is persisted so failures survive app restarts.
-- `AudioUploadService` — dedicated background service handles Omi Cloud uploads and marks each record uploaded/failed in the local DB.
-- `WatchCommandReceiver` on the wear side — phone can now send Force Sync, Start Recording, and Stop Recording commands directly to the watch.
-- Home screen live status card: watch connection state, battery level, "Receiving audio…" indicator, and a scrollable history of recent syncs with byte count, segment count, upload success/failure, and time span.
-- Upload Failures counter with one-tap retry and a Force Sync button.
-
-**Fixed**
-- "Receiving audio" indicator stuck on after transfer completes — a 5-second debounce timeout now guarantees the flag clears even if the final chunk is lost or dropped by the dual-listener dedup logic.
-- Status card height no longer shifts when the receiving-audio row appears/disappears — space is always reserved, visibility is toggled via color transparency.
-
----
-
-### Wear (`Omi4wOS_Wear_v1.2_Silero.apk`)
-
-**Changed**
-- Pre-roll buffer increased from 1.5s → 2.5s to prevent first-word clipping when transitioning from idle to active conversation mode.
-
----
-
-## v1.1 — 2026-04-08
-
-### Wear (`Omi4wOS_Wear_v1.1_Silero.apk`)
-
-- Replaced WebRTC GMM VAD with Silero LSTM (OnnxRuntime 1.14.0, pinned to avoid armeabi-v7a alignment bug in 1.15+).
-- Dynamic Conversational Hysteresis: idle mode requires 2 consecutive positive VAD windows; active conversation mode requires only 1.
-- 1.5s pre-roll buffer to capture sentence openers.
-- Idle Power Throttling: classification interval doubles to 1920ms after 5 minutes of silence; connectivity polling reduced from 30s to 2 minutes.
-- Store-and-forward caching: up to 500MB of Opus audio retained on disk if Bluetooth drops, synced chronologically on reconnection.
-- BLE Batch Transfer: transmits the completed payload at phrase end instead of streaming every second.
-
----
-
-## v1.0 — 2026-04-08
-
-### Mobile (`Omi4wOS_Mobile_v1.0.apk`) · Wear (`Omi4wOS_Wear_v1.0.apk`)
-
-- Initial release.
-- WebRTC GMM VAD on the watch.
-- Opus 16kbps encoding, Data Layer streaming to phone companion.
-- Phone assembles `.bin` archive and uploads to Omi Cloud `/v2/sync-local-files`.
-- Firebase token auto-refresh.
+**VAD / encoding pipeline**
+- Silero LSTM (OnnxRuntime 1.14.0 — pinned to avoid armeabi-v7a alignment bug in 1.15+).
+- Async Opus encoding on `Dispatchers.IO` (`Channel<EncodeRequest>` + `encoderLoop()`).
+- Integer loudness gate, 3s idle classification interval after 30s silence, 3.5s pre-roll buffer.
