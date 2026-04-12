@@ -92,17 +92,21 @@ class AudioReceiverService : WearableListenerService() {
         fun processMessage(context: Context, path: String, data: ByteArray) {
             _watchConnected.value = true
 
-            // Build a cheap but collision-resistant key from path + first 48 bytes of data.
-            // First 48 bytes of an audio message cover: segmentId (≤40 chars) + chunkIndex (4 bytes)
-            // — enough to uniquely identify any chunk without hashing the full audio payload.
-            val prefix = data.copyOfRange(0, minOf(48, data.size))
-            val key = path.hashCode().toLong().shl(32) xor
-                      java.util.Arrays.hashCode(prefix).toLong().and(0xFFFFFFFFL)
-            if (!seenMessages.add(key)) return  // duplicate delivery — skip silently
-
             Log.d(TAG, "processMessage: path=$path size=${data.size}")
             when {
-                path.startsWith(DataLayerPaths.AUDIO_SPEECH_PATH) -> handleAudioData(context, data)
+                path.startsWith(DataLayerPaths.AUDIO_SPEECH_PATH) -> {
+                    // Dedup audio chunks only — they arrive from both WearableListenerService
+                    // and the direct MessageClient listener, so we must drop the duplicate.
+                    // Control messages are NOT deduplicated: their payloads can legitimately
+                    // repeat (e.g. CMD_STATUS_RESPONSE with the same isRecording + battery),
+                    // and deduplicating them causes watch-button state changes to be silently
+                    // dropped on the phone.
+                    val prefix = data.copyOfRange(0, minOf(48, data.size))
+                    val key = path.hashCode().toLong().shl(32) xor
+                              java.util.Arrays.hashCode(prefix).toLong().and(0xFFFFFFFFL)
+                    if (!seenMessages.add(key)) return  // duplicate delivery — skip silently
+                    handleAudioData(context, data)
+                }
                 path == DataLayerPaths.AUDIO_CONTROL_PATH -> handleControlData(context, data)
             }
         }
