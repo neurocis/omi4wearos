@@ -111,6 +111,8 @@ dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.wear:wear:1.3.0")
 
-    // Standalone: direct Omi upload over WiFi/BT-tethering
+    // Standalone: direct Omi upload + QR credential setup
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("com.google.zxing:core:3.5.3")
+    implementation("org.nanohttpd:nanohttpd:2.3.1")
 }

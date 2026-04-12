@@ -11,11 +11,13 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -52,7 +54,10 @@ private val ColorSpeech  = Color(0xFF43A047) // Green — speech detected
 private val ColorNoPerms = Color(0xFFB71C1C) // Deep red — permission missing
 
 @Composable
-fun HomeScreen(onAboutClick: () -> Unit = {}) {
+fun HomeScreen(
+    onAboutClick: () -> Unit = {},
+    onSetupClick: () -> Unit = {}
+) {
     val context = LocalContext.current
     val haptic  = LocalHapticFeedback.current
 
@@ -169,16 +174,31 @@ fun HomeScreen(onAboutClick: () -> Unit = {}) {
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // About — subtle tap target
-            Text(
-                text = "About",
-                fontSize = 10.sp,
-                color = Color.White,
-                modifier = Modifier.clickable(
-                    indication = null,
-                    interactionSource = remember { MutableInteractionSource() }
-                ) { onAboutClick() }
-            )
+            // Bottom links — Setup | About
+            Row(
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Setup",
+                    fontSize = 10.sp,
+                    color = Color.White,
+                    modifier = Modifier.clickable(
+                        indication = null,
+                        interactionSource = remember { MutableInteractionSource() }
+                    ) { onSetupClick() }
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = "About",
+                    fontSize = 10.sp,
+                    color = Color.White,
+                    modifier = Modifier.clickable(
+                        indication = null,
+                        interactionSource = remember { MutableInteractionSource() }
+                    ) { onAboutClick() }
+                )
+            }
         }
     }
 }

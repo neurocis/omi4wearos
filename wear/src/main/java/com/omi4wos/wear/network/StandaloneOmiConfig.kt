@@ -59,6 +59,21 @@ class StandaloneOmiConfig(context: Context) {
             .apply()
     }
 
+    /** Called by [com.omi4wos.wear.setup.SetupServer] when user submits the web form. */
+    fun saveFromSetup(
+        firebaseWebApiKey: String,
+        idToken: String,
+        refreshToken: String,
+        tokenExpiresAtSecs: Long
+    ) {
+        prefs.edit()
+            .putString(KEY_API_KEY,       firebaseWebApiKey)
+            .putString(KEY_ID_TOKEN,      idToken)
+            .putString(KEY_REFRESH_TOKEN, refreshToken)
+            .putLong(KEY_EXPIRES_AT,      tokenExpiresAtSecs)
+            .apply()
+    }
+
     companion object {
         private const val PREFS_NAME        = "standalone_omi_config"
         private const val KEY_API_KEY       = "firebase_web_api_key"
