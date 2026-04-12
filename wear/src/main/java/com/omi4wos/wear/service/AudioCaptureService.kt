@@ -256,8 +256,6 @@ class AudioCaptureService : Service() {
         Log.i(TAG, "Stopping audio capture")
         prefs.edit().putBoolean(Constants.PREF_RECORDING_ENABLED, false).apply()
 
-        // Notify phone that recording has stopped before tearing down the sender
-        notifyPhoneRecordingState(false)
         classificationJob?.cancel()
         classificationJob = null
 
@@ -277,7 +275,15 @@ class AudioCaptureService : Service() {
         isInSpeechSegment = false
 
         stopForeground(STOP_FOREGROUND_REMOVE)
-        stopSelf()
+
+        // Notify the phone that recording has stopped, then stop the service.
+        // stopSelf() must be called from inside this coroutine — calling it before
+        // the coroutine completes triggers onDestroy() → serviceScope.cancel(), which
+        // would kill the notification before the network call could finish.
+        serviceScope.launch {
+            notifyPhoneRecordingState(false)
+            stopSelf()
+        }
     }
 
     /**
