@@ -40,22 +40,9 @@ object Constants {
 
     // Connectivity sync
     const val CONNECTIVITY_POLL_INTERVAL_MS = 120_000L // Check every 2 min (was 30s)
-    const val HOURLY_SYNC_INTERVAL_MS = 3_600_000L     // Sync data to phone every hour
+    const val HOURLY_SYNC_INTERVAL_MS = 3_600_000L     // Hourly fallback sync to phone
     const val PREF_LAST_SYNC_TIME     = "last_sync_time_ms"
     const val PREFS_NAME              = "omi4wos_wear_prefs"
-
-    // Stream mode
-    const val STREAM_MODE_REALTIME          = "realtime"
-    const val STREAM_MODE_BATCH             = "batch"
-    const val PREF_STREAM_MODE              = "stream_mode"
-
-    // Batch interval — stored as a String to support both minute counts and clock-aligned modes.
-    // Minute-based values: "5", "10", "15", "30", "60", "90", "120"
-    // Clock-aligned values: ":00" (top of every hour) | ":30" (every :00 and :30)
-    const val PREF_BATCH_INTERVAL           = "batch_interval"
-    const val DEFAULT_BATCH_INTERVAL        = "60"
-    const val BATCH_CLOCK_HOUR              = ":00"  // sync once per hour at xx:00
-    const val BATCH_CLOCK_HALF              = ":30"  // sync twice per hour at xx:00 and xx:30
 
     // Opus encoder parameters
     const val OPUS_BITRATE = 24000 // 24 kbps - good for speech

@@ -22,9 +22,8 @@ import java.io.DataOutputStream
  * Handles:
  *  - CMD_START_RECORDING  → starts AudioCaptureService
  *  - CMD_STOP_RECORDING   → stops AudioCaptureService
- *  - CMD_FORCE_SYNC       → triggers immediate sync via ACTION_FORCE_SYNC (does NOT reset hourly timer)
+ *  - CMD_FORCE_SYNC       → triggers immediate sync via ACTION_FORCE_SYNC
  *  - CMD_STATUS_REQUEST   → replies with current recording state to phone
- *  - CMD_SET_STREAM_MODE  → updates stream mode + batch interval on the watch
  */
 class WatchCommandReceiver : WearableListenerService() {
 
@@ -73,29 +72,7 @@ class WatchCommandReceiver : WearableListenerService() {
                 val isRecording = AudioCaptureService.isRecording.value
                 scope.launch { sendStatusResponse(messageEvent.sourceNodeId, isRecording) }
             }
-            else -> {
-                // SET_STREAM_MODE:realtime  or  SET_STREAM_MODE:batch:60
-                if (command.startsWith(DataLayerPaths.CMD_SET_STREAM_MODE + ":")) {
-                    val parts = command.split(":")
-                    val mode = parts.getOrNull(1) ?: return
-                    // Rejoin everything from index 2 onward with ":" to reconstruct values
-                    // like ":00" or ":30" that were split by the delimiter.
-                    // e.g. "SET_STREAM_MODE:batch::00".split(":") → ["SET_STREAM_MODE","batch","","00"]
-                    //      parts.drop(2).joinToString(":") → ":00"  ✓
-                    val interval = if (parts.size > 2) parts.drop(2).joinToString(":") else null
-                    startService(
-                        Intent(this, AudioCaptureService::class.java).apply {
-                            action = AudioCaptureService.ACTION_SET_STREAM_MODE
-                            putExtra(AudioCaptureService.EXTRA_STREAM_MODE, mode)
-                            if (interval != null) {
-                                putExtra(AudioCaptureService.EXTRA_BATCH_INTERVAL, interval)
-                            }
-                        }
-                    )
-                } else {
-                    Log.w(TAG, "Unknown command: $command")
-                }
-            }
+            else -> Log.w(TAG, "Unknown command: $command")
         }
     }
 

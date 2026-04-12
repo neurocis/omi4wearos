@@ -4,7 +4,6 @@ import android.content.Context
 import android.content.Intent
 import android.util.Log
 import com.google.android.gms.wearable.MessageEvent
-import com.google.android.gms.wearable.Node
 import com.google.android.gms.wearable.WearableListenerService
 import com.omi4wos.shared.AudioChunk
 import com.omi4wos.shared.DataLayerPaths
@@ -36,13 +35,6 @@ class AudioReceiverService : WearableListenerService() {
         private const val TAG = "AudioReceiverService"
 
         // Observable state
-        private val _watchConnected = MutableStateFlow(false)
-        val watchConnected: StateFlow<Boolean> = _watchConnected
-
-        fun setWatchConnected(connected: Boolean) {
-            _watchConnected.value = connected
-        }
-
         private val _audioChunkFlow = MutableSharedFlow<AudioChunk>(extraBufferCapacity = 64)
         val audioChunkFlow: SharedFlow<AudioChunk> = _audioChunkFlow
 
@@ -90,8 +82,6 @@ class AudioReceiverService : WearableListenerService() {
          * eliminating the race conditions that plagued the old per-chunk dedup approach.
          */
         fun processMessage(context: Context, path: String, data: ByteArray) {
-            _watchConnected.value = true
-
             Log.d(TAG, "processMessage: path=$path size=${data.size}")
             when {
                 path.startsWith(DataLayerPaths.AUDIO_SPEECH_PATH) -> {
@@ -260,16 +250,6 @@ class AudioReceiverService : WearableListenerService() {
     }
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-
-    override fun onPeerConnected(peer: Node) {
-        Log.i(TAG, "Watch connected: ${peer.displayName} (${peer.id})")
-        _watchConnected.value = true
-    }
-
-    override fun onPeerDisconnected(peer: Node) {
-        Log.i(TAG, "Watch disconnected: ${peer.displayName} (${peer.id})")
-        _watchConnected.value = false
-    }
 
     override fun onMessageReceived(messageEvent: MessageEvent) {
         processMessage(this, messageEvent.path, messageEvent.data)

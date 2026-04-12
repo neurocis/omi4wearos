@@ -1,5 +1,45 @@
 # Changelog
 
+## v2.0 (Wear + Mobile) — 2026-04-12
+
+### Architecture Change: Batch Mode Removed
+
+**Battery test results**
+
+Controlled 30-minute test with all non-BT radios off, screen allowed to sleep normally, constant dialog audio playing:
+
+| Mode | Drain rate |
+|---|---|
+| Realtime (sync per segment) | ~1% / 5 min |
+| Batch (no sync until stop) | ~1% / 5 min |
+
+Both modes consumed identical battery. Bluetooth data transfer is not a meaningful contributor to watch drain. The dominant costs are the always-on microphone and the `PARTIAL_WAKE_LOCK` (which prevents any CPU deep-sleep state). Stream mode selection provided zero measurable benefit.
+
+Baseline drain on this watch (Galaxy Watch 7, 300 mAh, ~1 year old) is 4–6%/hr without the app. Recording adds ~18–24 mAh/hr above that baseline — 2–3× normal — regardless of how frequently data is transmitted to the phone.
+
+**What was removed**
+- Realtime / Batch stream mode card and toggle (phone UI)
+- Batch interval dropdown (5, 10, 15, 30, 60, 90, 120 min; `:00` / `:30` clock-aligned options)
+- `SET_STREAM_MODE` Data Layer command
+- `shouldSyncNow()` clock-aligned sync scheduling on the watch
+- Force Sync button from the phone UI
+- `streamMode` / `batchInterval` from `OmiConfig`, `HomeUiState`, `HomeViewModel`
+- `STREAM_MODE_REALTIME`, `STREAM_MODE_BATCH`, `PREF_STREAM_MODE`, `PREF_BATCH_INTERVAL`, `DEFAULT_BATCH_INTERVAL`, `BATCH_CLOCK_HOUR`, `BATCH_CLOCK_HALF` from shared `Constants`
+- `CMD_SET_STREAM_MODE` from `DataLayerPaths`
+
+**What the watch does now**
+- After each completed speech segment, a 30-second debounced upload job fires. Consecutive 60-second max-segments that arrive within that window are all included in one `performSync()` call, landing in one Omi conversation.
+- A hourly fallback sync in the connectivity poll loop handles BT-reconnect scenarios and catches any chunks missed by the per-segment path.
+- `CMD_FORCE_SYNC` is still handled by `WatchCommandReceiver` for store-and-forward reconnection cases.
+
+**Phone UI**
+- Stream mode card removed entirely
+- Force Sync button removed
+- Upload Failures counter and Retry icon remain
+- `AudioUploadService` always buffers segments by syncId and flushes on `CMD_SYNC_END` (the grouping that prevents conversation fragmentation on Omi's backend)
+
+---
+
 ## v1.11 (Wear) / v1.9 (Mobile) — 2026-04-12
 
 ### Wear (`Omi4wOS_Wear_v1.11.apk`)
