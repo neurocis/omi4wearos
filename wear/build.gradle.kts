@@ -38,6 +38,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
 
@@ -94,4 +95,9 @@ dependencies {
     // Core
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.wear:wear:1.3.0")
+
+    // Standalone-only: direct Omi upload, QR setup, local web server
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("com.google.zxing:core:3.5.3")
+    implementation("org.nanohttpd:nanohttpd:2.3.1")
 }

@@ -4,17 +4,20 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -42,7 +45,7 @@ import androidx.wear.compose.material.Icon
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
 import com.omi4wos.wear.R
-import com.omi4wos.wear.service.AudioCaptureService
+import com.omi4wos.wear.service.StandaloneAudioCaptureService
 
 // State colours — drive both the button and the status label
 private val ColorIdle    = Color(0xFF3A3A4A) // Dark slate — not recording
@@ -51,12 +54,15 @@ private val ColorSpeech  = Color(0xFF43A047) // Green — speech detected
 private val ColorNoPerms = Color(0xFFB71C1C) // Deep red — permission missing
 
 @Composable
-fun HomeScreen(onAboutClick: () -> Unit = {}) {
+fun HomeScreen(
+    onAboutClick: () -> Unit = {},
+    onSetupClick: () -> Unit = {}
+) {
     val context = LocalContext.current
     val haptic  = LocalHapticFeedback.current
 
-    val isRecording      by AudioCaptureService.isRecording.collectAsState()
-    val isSpeechDetected by AudioCaptureService.isSpeechDetected.collectAsState()
+    val isRecording      by StandaloneAudioCaptureService.isRecording.collectAsState()
+    val isSpeechDetected by StandaloneAudioCaptureService.isSpeechDetected.collectAsState()
 
     var hasPermission by remember {
         mutableStateOf(
@@ -98,16 +104,26 @@ fun HomeScreen(onAboutClick: () -> Unit = {}) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                // top=28dp pushes the centre of the content below the TimeText
-                .padding(start = 16.dp, end = 16.dp, top = 28.dp, bottom = 8.dp),
+                .padding(start = 16.dp, end = 16.dp, top = 24.dp, bottom = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
 
+            // omi4wearOS logo
+            Image(
+                painter = painterResource(R.drawable.omi4wearos_logo_title),
+                contentDescription = "omi4wearOS",
+                modifier = Modifier
+                    .height(22.dp)
+                    .padding(bottom = 2.dp)
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
             // Mic button with outer glow halo
             Box(contentAlignment = Alignment.Center) {
 
-                // Halo ring — soft glow that appears when recording
+                // Halo ring — soft glow when recording
                 Box(
                     modifier = Modifier
                         .size(90.dp)
@@ -139,9 +155,9 @@ fun HomeScreen(onAboutClick: () -> Unit = {}) {
                 }
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
-            // Primary status label — colour-matched to button state when active
+            // Primary status label
             Text(
                 text = when {
                     !hasPermission   -> "No permission"
@@ -158,29 +174,44 @@ fun HomeScreen(onAboutClick: () -> Unit = {}) {
                 textAlign = TextAlign.Center
             )
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
-            // About — subtle tap target, no chrome
-            Text(
-                text = "About",
-                fontSize = 10.sp,
-                color = Color.White,
-                modifier = Modifier.clickable(
-                    indication = null,
-                    interactionSource = remember { MutableInteractionSource() }
-                ) { onAboutClick() }
-            )
+            // Bottom links — Setup | About
+            Row(
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Setup",
+                    fontSize = 10.sp,
+                    color = Color.White,
+                    modifier = Modifier.clickable(
+                        indication = null,
+                        interactionSource = remember { MutableInteractionSource() }
+                    ) { onSetupClick() }
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = "About",
+                    fontSize = 10.sp,
+                    color = Color.White,
+                    modifier = Modifier.clickable(
+                        indication = null,
+                        interactionSource = remember { MutableInteractionSource() }
+                    ) { onAboutClick() }
+                )
+            }
         }
     }
 }
 
 private fun toggleRecording(context: Context, currentlyRecording: Boolean) {
-    val intent = Intent(context, AudioCaptureService::class.java)
+    val intent = Intent(context, StandaloneAudioCaptureService::class.java)
     if (currentlyRecording) {
-        intent.action = AudioCaptureService.ACTION_STOP
+        intent.action = StandaloneAudioCaptureService.ACTION_STOP
         context.startService(intent)
     } else {
-        intent.action = AudioCaptureService.ACTION_START
+        intent.action = StandaloneAudioCaptureService.ACTION_START
         ContextCompat.startForegroundService(context, intent)
     }
 }

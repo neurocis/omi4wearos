@@ -6,6 +6,7 @@ import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
 import com.omi4wos.wear.presentation.screens.AboutScreen
 import com.omi4wos.wear.presentation.screens.HomeScreen
+import com.omi4wos.wear.presentation.screens.SetupScreen
 import com.omi4wos.wear.presentation.theme.Omi4wosTheme
 
 @Composable
@@ -17,10 +18,16 @@ fun WearApp() {
             startDestination = "home"
         ) {
             composable("home") {
-                HomeScreen(onAboutClick = { navController.navigate("about") })
+                HomeScreen(
+                    onAboutClick = { navController.navigate("about") },
+                    onSetupClick = { navController.navigate("setup") }
+                )
             }
             composable("about") {
                 AboutScreen()
+            }
+            composable("setup") {
+                SetupScreen(onDone = { navController.popBackStack() })
             }
         }
     }
