@@ -41,7 +41,7 @@ class StandaloneOmiApiClient(private val context: Context) {
     suspend fun uploadChunks(chunks: List<AudioChunk>): Boolean = withContext(Dispatchers.IO) {
         if (chunks.isEmpty()) return@withContext true
 
-        val creds = ensureValidToken() ?: return@withContext false
+        var creds = ensureValidToken() ?: return@withContext false
         val sessions = groupIntoSessions(chunks)
 
         var allOk = true
@@ -53,16 +53,32 @@ class StandaloneOmiApiClient(private val context: Context) {
                 ?: continue
 
             val timestampSecs = session.first().timestampMs / 1000L
-            if (!uploadSession(creds, bytes, timestampSecs)) allOk = false
+            val result = uploadSession(creds, bytes, timestampSecs)
+
+            if (result == UploadResult.TOKEN_EXPIRED) {
+                // idToken was stale despite expiry check — force a refresh and retry once
+                Log.i(TAG, "Got 401, forcing token refresh and retrying…")
+                val refreshed = refreshToken(creds)
+                if (refreshed == null) {
+                    allOk = false
+                    continue
+                }
+                creds = refreshed
+                if (uploadSession(creds, bytes, timestampSecs) != UploadResult.SUCCESS) allOk = false
+            } else if (result != UploadResult.SUCCESS) {
+                allOk = false
+            }
         }
         allOk
     }
+
+    private enum class UploadResult { SUCCESS, TOKEN_EXPIRED, FAILED }
 
     private fun uploadSession(
         creds: StandaloneOmiConfig.Credentials,
         audioBytes: ByteArray,
         timestampSecs: Long
-    ): Boolean {
+    ): UploadResult {
         val fileName = "recording_fs320_${timestampSecs}.bin"
         val body = MultipartBody.Builder()
             .setType(MultipartBody.FORM)
@@ -81,17 +97,24 @@ class StandaloneOmiApiClient(private val context: Context) {
 
         return try {
             http.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    Log.i(TAG, "Upload success: $fileName (${audioBytes.size} bytes)")
-                    true
-                } else {
-                    Log.w(TAG, "Upload failed ${response.code}: $fileName")
-                    false
+                when {
+                    response.isSuccessful -> {
+                        Log.i(TAG, "Upload success: $fileName (${audioBytes.size} bytes)")
+                        UploadResult.SUCCESS
+                    }
+                    response.code == 401 -> {
+                        Log.w(TAG, "Upload 401 (token expired): $fileName")
+                        UploadResult.TOKEN_EXPIRED
+                    }
+                    else -> {
+                        Log.w(TAG, "Upload failed ${response.code}: $fileName")
+                        UploadResult.FAILED
+                    }
                 }
             }
         } catch (e: IOException) {
             Log.e(TAG, "Upload IO error: $fileName", e)
-            false
+            UploadResult.FAILED
         }
     }
 

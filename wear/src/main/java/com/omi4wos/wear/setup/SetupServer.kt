@@ -150,11 +150,13 @@ async function doSetup() {
                 return error("Missing required fields")
             }
 
+            // Set expiresAt=0 so the first upload always triggers a token refresh via
+            // the refresh token. The idToken pasted by the user may already be expired.
             config.saveFromSetup(
                 firebaseWebApiKey  = apiKey,
                 idToken            = idToken,
                 refreshToken       = refreshToken,
-                tokenExpiresAtSecs = System.currentTimeMillis() / 1000L + expiresIn
+                tokenExpiresAtSecs = 0L
             )
             Log.i(TAG, "Credentials received and stored via web setup")
             onCredentialsReceived()
