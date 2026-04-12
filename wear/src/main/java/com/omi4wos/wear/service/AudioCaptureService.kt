@@ -105,7 +105,7 @@ class AudioCaptureService : Service() {
     private var consecutiveSilenceFrames = 0
     private var currentSegmentId: String = ""
     private var chunkIndex = 0
-    private var isInSpeechSegment = false
+    @Volatile private var isInSpeechSegment = false
 
     // Thresholds for hysteresis.
     // 6 × 960ms ≈ 5.76 s of continuous silence required to end a segment.
@@ -496,6 +496,18 @@ class AudioCaptureService : Service() {
      * The syncId lets the phone group all segments from this transfer into one upload.
      */
     private suspend fun performSync() {
+        // Close any in-progress speech segment so its final chunk is saved before we
+        // read the pending-chunk list. Without this, batch sync during continuous speech
+        // sends only isFinal=false chunks and the phone never completes a segment.
+        if (isInSpeechSegment) {
+            Log.i(TAG, "Closing in-progress segment before sync: $currentSegmentId")
+            extractAndSendChunk(0f, isFinal = true)
+            isInSpeechSegment = false
+            _isSpeechDetected.value = false
+            updateNotification("Monitoring for speech…")
+            lastValidSpeechEndTimeMs = System.currentTimeMillis()
+        }
+
         val syncId = java.util.UUID.randomUUID().toString().take(8)
         val bm = getSystemService(Context.BATTERY_SERVICE) as BatteryManager
         val battery = bm.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)

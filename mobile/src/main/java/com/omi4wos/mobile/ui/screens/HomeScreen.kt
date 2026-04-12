@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.ui.draw.alpha
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -78,53 +79,53 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
                     MaterialTheme.colorScheme.surfaceVariant
             )
         ) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                // Status title at top of card
-                Text(
-                    text = if (uiState.watchConnected) "Watch Connected" else "Watch Disconnected",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_launcher_foreground),
+                    contentDescription = null,
+                    tint = if (uiState.watchConnected) Color(0xFF4CAF50) else Color(0xFF757575),
+                    modifier = Modifier.size(36.dp)
                 )
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically
+                Spacer(modifier = Modifier.width(8.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = if (uiState.watchConnected) "Watch Connected" else "Watch Disconnected",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    if (uiState.watchConnected && uiState.isReceivingAudio) {
+                        Text(
+                            text = "Receiving audio…",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color(0xFF4CAF50)
+                        )
+                    }
+                }
+                // Always rendered so card height stays constant; invisible when disconnected.
+                Button(
+                    onClick = {
+                        if (uiState.watchRecordingEnabled) viewModel.stopWatchRecording()
+                        else viewModel.startWatchRecording()
+                    },
+                    enabled = uiState.watchConnected,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (uiState.watchRecordingEnabled)
+                            Color(0xFFB71C1C) else Color(0xFF1B5E20)
+                    ),
+                    modifier = Modifier.alpha(if (uiState.watchConnected) 1f else 0f)
                 ) {
                     Icon(
-                        painter = painterResource(R.drawable.ic_launcher_foreground),
+                        imageVector = if (uiState.watchRecordingEnabled) Icons.Default.MicOff else Icons.Default.Mic,
                         contentDescription = null,
-                        tint = if (uiState.watchConnected) Color(0xFF4CAF50) else Color(0xFF757575),
-                        modifier = Modifier.size(80.dp)
+                        modifier = Modifier.size(16.dp)
                     )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    // Always reserve space; color hides it when inactive so the row height stays stable
-                    Text(
-                        text = "Receiving audio…",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (uiState.watchConnected && uiState.isReceivingAudio)
-                            Color(0xFF4CAF50) else Color.Transparent,
-                        modifier = Modifier.weight(1f)
-                    )
-                    if (uiState.watchConnected) {
-                        Button(
-                            onClick = {
-                                if (uiState.watchRecordingEnabled) viewModel.stopWatchRecording()
-                                else viewModel.startWatchRecording()
-                            },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (uiState.watchRecordingEnabled)
-                                    Color(0xFFB71C1C) else Color(0xFF1B5E20)
-                            )
-                        ) {
-                            Icon(
-                                imageVector = if (uiState.watchRecordingEnabled) Icons.Default.MicOff else Icons.Default.Mic,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(if (uiState.watchRecordingEnabled) "Stop" else "Start")
-                        }
-                    }
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(if (uiState.watchRecordingEnabled) "Stop" else "Start")
                 }
             }
         }
@@ -235,70 +236,59 @@ private fun StreamModeCard(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Text(
-                text = "Sync Mode",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(
-                verticalAlignment = Alignment.Bottom,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Button(
+                onClick = { onModeSelected(Constants.STREAM_MODE_REALTIME) },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (realtimeSelected) Color(0xFFE53935)
+                                     else MaterialTheme.colorScheme.surface,
+                    contentColor = if (realtimeSelected) Color.White
+                                   else MaterialTheme.colorScheme.onSurface
+                )
             ) {
-                Button(
-                    onClick = { onModeSelected(Constants.STREAM_MODE_REALTIME) },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (realtimeSelected) Color(0xFFE53935)
-                                         else MaterialTheme.colorScheme.surface,
-                        contentColor = if (realtimeSelected) Color.White
-                                       else MaterialTheme.colorScheme.onSurface
-                    )
-                ) {
-                    Text("Realtime Stream", style = MaterialTheme.typography.bodySmall)
-                }
-                Button(
-                    onClick = { onModeSelected(Constants.STREAM_MODE_BATCH) },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (!realtimeSelected) MaterialTheme.colorScheme.primary
-                                         else MaterialTheme.colorScheme.surface,
-                        contentColor = if (!realtimeSelected) MaterialTheme.colorScheme.onPrimary
-                                       else MaterialTheme.colorScheme.onSurface
-                    )
-                ) {
-                    Text("Batch Stream", style = MaterialTheme.typography.bodySmall)
-                }
-                if (!realtimeSelected) {
-                    Column {
+                Text("Realtime Stream", style = MaterialTheme.typography.bodySmall)
+            }
+            Button(
+                onClick = { onModeSelected(Constants.STREAM_MODE_BATCH) },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (!realtimeSelected) MaterialTheme.colorScheme.primary
+                                     else MaterialTheme.colorScheme.surface,
+                    contentColor = if (!realtimeSelected) MaterialTheme.colorScheme.onPrimary
+                                   else MaterialTheme.colorScheme.onSurface
+                )
+            ) {
+                Text("Batch Stream", style = MaterialTheme.typography.bodySmall)
+            }
+            if (!realtimeSelected) {
+                androidx.compose.foundation.layout.Box {
+                    OutlinedButton(
+                        onClick = { dropdownExpanded = true },
+                        contentPadding = ButtonDefaults.ContentPadding
+                    ) {
                         Text(
-                            text = "Interval (min)",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            text = intervalLabel(batchInterval),
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 1
                         )
-                        androidx.compose.foundation.layout.Box {
-                            OutlinedButton(
-                                onClick = { dropdownExpanded = true },
-                                modifier = Modifier.width(160.dp)
-                            ) {
-                                Text(
-                                    text = intervalLabel(batchInterval),
-                                    style = MaterialTheme.typography.bodySmall
-                                )
-                            }
-                            DropdownMenu(
-                                expanded = dropdownExpanded,
-                                onDismissRequest = { dropdownExpanded = false }
-                            ) {
-                                BATCH_INTERVAL_OPTIONS.forEach { option ->
-                                    DropdownMenuItem(
-                                        text = { Text(intervalLabel(option)) },
-                                        onClick = {
-                                            onIntervalSelected(option)
-                                            dropdownExpanded = false
-                                        }
-                                    )
+                    }
+                    DropdownMenu(
+                        expanded = dropdownExpanded,
+                        onDismissRequest = { dropdownExpanded = false }
+                    ) {
+                        BATCH_INTERVAL_OPTIONS.forEach { option ->
+                            DropdownMenuItem(
+                                text = { Text(intervalLabel(option)) },
+                                onClick = {
+                                    onIntervalSelected(option)
+                                    dropdownExpanded = false
                                 }
-                            }
+                            )
                         }
                     }
                 }

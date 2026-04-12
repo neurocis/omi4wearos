@@ -8,10 +8,10 @@ import com.google.android.gms.wearable.MessageClient
 import com.google.android.gms.wearable.Wearable
 import com.omi4wos.mobile.data.SyncSummary
 import com.omi4wos.mobile.data.UploadRepository
-import com.omi4wos.mobile.omi.OmiApiClient
 import com.omi4wos.mobile.omi.OmiConfig
 import com.omi4wos.mobile.service.AudioReceiverService
 import com.omi4wos.mobile.service.AudioUploadService
+import com.omi4wos.mobile.service.runUploadRetry
 import com.omi4wos.shared.Constants
 import com.omi4wos.shared.DataLayerPaths
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,7 +21,6 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
-import java.io.File
 
 data class HomeUiState(
     val watchConnected: Boolean = false,
@@ -131,36 +130,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun retryPendingUploads() {
         viewModelScope.launch {
-            val pending = repository.getPendingUploads()
-            if (pending.isEmpty()) return@launch
-
-            val config = OmiConfig(getApplication())
-            val apiClient = OmiApiClient()
-            val cacheDir = File(getApplication<Application>().cacheDir, "speech_audio")
-
-            for (record in pending) {
-                val uploadName = "recording_fs320_${record.timestamp / 1000}.bin"
-                val binFile = File(cacheDir, uploadName)
-
-                if (binFile.exists()) {
-                    val token = apiClient.getValidFirebaseToken(config)
-                    if (token != null) {
-                        try {
-                            val result = apiClient.uploadAudioSync(token, binFile, uploadName)
-                            if (result != null) {
-                                repository.markUploaded(record.id)
-                                binFile.delete()
-                            }
-                        } catch (e: Exception) {
-                            Log.e(TAG, "Retry failed for ${record.id}", e)
-                        }
-                    } else {
-                        Log.e(TAG, "Cannot retry — no valid token")
-                    }
-                } else {
-                    Log.w(TAG, "File missing for retry: $uploadName")
-                }
-            }
+            runUploadRetry(getApplication())
         }
     }
 

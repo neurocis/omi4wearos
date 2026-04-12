@@ -20,8 +20,8 @@ The phone companion APK is required for both watch builds. Pick the APKs that ma
 
 | File | Description |
 |---|---|
-| `Omi4wOS_Mobile_v1.8.apk` | **Recommended phone build.** Logo title, redesigned watch card, all v1.7 fixes included. Install onto your **Android Phone**. |
-| `Omi4wOS_Wear_v1.10.apk` | **Recommended watch build.** Battery optimisations + first-word clipping fix. Install via ADB onto your **Watch**. |
+| `Omi4wOS_Mobile_v1.9.apk` | **Recommended phone build.** Upload retry fixes, background retry worker, compact UI. Install onto your **Android Phone**. |
+| `Omi4wOS_Wear_v1.11.apk` | **Recommended watch build.** Batch sync incomplete-segment fix. Install via ADB onto your **Watch**. |
 
 Older builds are in `releases/archive/`. See [CHANGELOG](releases/CHANGELOG.md) for full history.
 
@@ -100,6 +100,18 @@ To interface perfectly with Omi Cloud natively, this system securely routes thro
 5. **Data Transmission**: Once a sentence concludes, the watch evaluates Bluetooth connectivity. In **Realtime Stream** mode, the watch immediately transmits the completed segment as soon as it ends. In **Batch Stream** mode, the watch accumulates segments and syncs on a schedule you set from the phone companion. Available intervals: `:00` (once per hour, at the top of the hour), `:30` (twice per hour, at :00 and :30), or fixed durations of 5, 10, 15, 30, 60, 90, or 120 minutes. The `:00` and `:30` options are clock-aligned — the watch checks whether the most recently passed boundary (:00 or :30) has not yet been synced, so syncs happen at predictable wall-clock times regardless of when the app started. Fixed-duration intervals count down from the last sync. If disconnected, files are securely retained until a background worker syncs them upon reconnection.
 6. **Phone**: The companion app listens on the Data Layer, assembling the received Opus payloads into an `.bin` archive.
 7. **Cloud Upload**: The phone pushes the compiled `.bin` archive into the Omi Cloud using standard Firebase Authentication tokens.
+
+## What's New in v1.11 (Wear) / v1.9 (Mobile)
+
+**Wear v1.11**
+- **Batch sync incomplete segments fixed**: Force sync or scheduled sync during active speech sent only `isFinal=false` chunks — the phone would show "Receiving audio…" but never complete the segment or trigger an upload. `performSync()` now closes the in-progress segment before syncing, ensuring the phone always receives a `isFinal=true` chunk.
+
+**Mobile v1.9**
+- **Upload retry data loss fixed**: Failed batch uploads were having their audio file deleted immediately on failure, making retry impossible. File is now preserved until confirmed upload success.
+- **Background upload retry**: WorkManager retries failed uploads automatically every 15 minutes when a network connection is present.
+- **Double-delivery dedup race fixed**: Concurrent message delivery from two listeners was corrupting segment assembly, causing `triggerTranscription()` to never be called. Fixed with a synchronized dedup gate at message entry.
+- **Compact watch connection card**: Single-row layout — button drives card height, custom watch icon sized to match (36dp). Height is static when connected or disconnected.
+- **Compact stream mode card + interval button**: Tighter layout, interval button now matches height of Realtime/Batch buttons.
 
 ## What's New in v1.10
 

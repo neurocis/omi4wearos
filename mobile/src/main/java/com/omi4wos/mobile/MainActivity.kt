@@ -9,8 +9,15 @@ import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.core.content.ContextCompat
+import androidx.work.Constraints
+import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkManager
+import com.omi4wos.mobile.service.UploadRetryWorker
 import com.omi4wos.mobile.service.WatchReceiverService
 import com.omi4wos.mobile.ui.MobileApp
+import java.util.concurrent.TimeUnit
 
 class MainActivity : ComponentActivity() {
 
@@ -22,10 +29,27 @@ class MainActivity : ComponentActivity() {
         ContextCompat.startForegroundService(
             this, Intent(this, WatchReceiverService::class.java)
         )
+        scheduleUploadRetry()
         requestBatteryOptimizationExemption()
         setContent {
             MobileApp()
         }
+    }
+
+    private fun scheduleUploadRetry() {
+        val request = PeriodicWorkRequestBuilder<UploadRetryWorker>(15, TimeUnit.MINUTES)
+            .setConstraints(
+                Constraints.Builder()
+                    .setRequiredNetworkType(NetworkType.CONNECTED)
+                    .build()
+            )
+            .build()
+        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+            UploadRetryWorker.WORK_NAME,
+            ExistingPeriodicWorkPolicy.KEEP,
+            request
+        )
+        Log.i(TAG, "Upload retry worker scheduled (15 min, network-constrained)")
     }
 
     /**

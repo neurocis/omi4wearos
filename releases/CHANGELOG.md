@@ -1,5 +1,31 @@
 # Changelog
 
+## v1.11 (Wear) / v1.9 (Mobile) — 2026-04-12
+
+### Wear (`Omi4wOS_Wear_v1.11.apk`)
+
+**Fixed**
+- **Batch sync incomplete segments**: When a force sync or scheduled sync fired while a speech segment was actively in progress, all chunks for that segment had `isFinal=false`. The phone received them and waited indefinitely for a final chunk that never arrived — resulting in the "Receiving audio…" indicator appearing but nothing in the upload log. `performSync()` now closes any in-progress segment (emitting `isFinal=true`) before reading the pending chunk list and sending `SYNC_START`. This only affects batch mode; realtime mode transmits the final chunk naturally when silence is detected.
+- **`isInSpeechSegment` marked `@Volatile`**: Ensures the sync coroutine always reads the authoritative value written by the classification thread.
+
+### Mobile (`Omi4wOS_Mobile_v1.9.apk`)
+
+**Fixed**
+- **Upload retry deleting audio on failure**: In batch mode, `AudioUploadService.uploadSession()` called `binFile.delete()` on both the null-result and exception failure paths, erasing the only copy of the audio before retry could attempt it. The file is now preserved on failure and only deleted on confirmed success.
+- **Retry grouped by syncId**: The old retry logic re-attempted uploads 1:1 per database record, but batch mode creates one `.bin` file covering N segments. Retry now groups pending records by `syncId` and re-uploads the shared file once per group, matching how the original upload was structured.
+- **Double-delivery race causing zero completed segments**: Both `AudioReceiverService` (WearableListenerService) and the direct `MessageClient` listener in `HomeViewModel` receive every watch message. The previous per-chunk dedup used a non-thread-safe `mutableListOf()` inside a `ConcurrentHashMap`, so the final chunk's segment could be consumed with an empty list — `triggerTranscription()` was never called. Fixed with a synchronized `LinkedHashSet` dedup at `processMessage()` entry; duplicates are rejected before any chunk is processed.
+- **Thread-safe segment assembly**: `activeSegments` values changed from `mutableListOf()` to `Collections.synchronizedList(mutableListOf())` to prevent concurrent-insert corruption.
+
+**Added**
+- **Background upload retry (WorkManager)**: `UploadRetryWorker` runs every 15 minutes when a network connection is available, automatically re-attempting any pending uploads without user interaction. Scheduled on app launch via `ExistingPeriodicWorkPolicy.KEEP` so only one instance ever runs.
+
+**Changed**
+- **Compact watch connection card**: Replaced the tall two-row card layout (80dp icon + stacked text) with a single-row design. The Start/Stop button drives the card height; the custom watch icon is fixed at 36dp to match. Card height is static whether connected or disconnected — button is always rendered, invisible (`alpha=0`) and disabled when disconnected.
+- **Compact stream mode card**: Removed "Sync Mode" and "Interval (min)" labels, reducing to a single tight row of buttons.
+- **Interval button sizing**: Removed hardcoded `width(140.dp)` and constrained text to `maxLines=1`, making the interval button the same height as the Realtime/Batch buttons.
+
+---
+
 ## v1.10 — 2026-04-11
 
 ### Wear (`Omi4wOS_Wear_v1.10.apk`)

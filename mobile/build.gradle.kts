@@ -13,8 +13,8 @@ android {
         applicationId = "com.omi4wos"
         minSdk = 28
         targetSdk = 34
-        versionCode = 8
-        versionName = "1.8.0"
+        versionCode = 9
+        versionName = "1.9.0"
     }
 
     buildTypes {
@@ -87,6 +87,9 @@ dependencies {
 
     // Material3 theme (Theme.Material3.DayNight.NoActionBar referenced in AndroidManifest)
     implementation("com.google.android.material:material:1.12.0")
+
+    // WorkManager for background upload retry
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
 
     // Core
     implementation("androidx.core:core-ktx:1.13.1")

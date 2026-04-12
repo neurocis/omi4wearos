@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import java.io.ByteArrayInputStream
 import java.io.DataInputStream
+import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -68,11 +69,37 @@ class AudioReceiverService : WearableListenerService() {
         @Volatile private var audioTimeoutJob: Job? = null
 
         /**
+         * Deduplicates identical messages that arrive from both WatchReceiverService and
+         * the direct MessageClient listener in HomeViewModel. Keyed by (path + segmentId +
+         * chunkIndex) for audio, or (path + data hash) for control messages.
+         * Fixed capacity: oldest entry evicted once the set exceeds 256 items.
+         */
+        private val seenMessages: MutableSet<Long> = Collections.synchronizedSet(
+            object : LinkedHashSet<Long>(256, 0.75f) {
+                override fun add(element: Long): Boolean {
+                    if (size >= 256) remove(iterator().next())
+                    return super.add(element)
+                }
+            }
+        )
+
+        /**
          * Process an incoming message from either WearableListenerService or a direct
          * MessageClient listener. Called from both paths so logic stays in one place.
+         * Deduplication happens here so downstream code never sees the same message twice,
+         * eliminating the race conditions that plagued the old per-chunk dedup approach.
          */
         fun processMessage(context: Context, path: String, data: ByteArray) {
             _watchConnected.value = true
+
+            // Build a cheap but collision-resistant key from path + first 48 bytes of data.
+            // First 48 bytes of an audio message cover: segmentId (≤40 chars) + chunkIndex (4 bytes)
+            // — enough to uniquely identify any chunk without hashing the full audio payload.
+            val prefix = data.copyOfRange(0, minOf(48, data.size))
+            val key = path.hashCode().toLong().shl(32) xor
+                      java.util.Arrays.hashCode(prefix).toLong().and(0xFFFFFFFFL)
+            if (!seenMessages.add(key)) return  // duplicate delivery — skip silently
+
             Log.d(TAG, "processMessage: path=$path size=${data.size}")
             when {
                 path.startsWith(DataLayerPaths.AUDIO_SPEECH_PATH) -> handleAudioData(context, data)
@@ -84,11 +111,11 @@ class AudioReceiverService : WearableListenerService() {
             try {
                 val chunk = deserializeChunk(data)
 
-                val segmentChunks = activeSegments.getOrPut(chunk.segmentId) { mutableListOf() }
-
-                // Deduplicate: Some watches fire both WearableListenerService and MessageClient listeners!
-                if (segmentChunks.any { it.chunkIndex == chunk.chunkIndex }) {
-                    return
+                // Each message is already deduplicated at processMessage() level.
+                // Use a synchronized list so concurrent inserts from any remaining
+                // parallel calls don't corrupt assembly.
+                val segmentChunks = activeSegments.getOrPut(chunk.segmentId) {
+                    Collections.synchronizedList(mutableListOf())
                 }
 
                 segmentChunks.add(chunk)

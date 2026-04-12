@@ -350,11 +350,11 @@ class AudioUploadService : Service() {
                     saveRecord(seg.segmentId, syncId, "[Upload Failed]",
                         seg.startTime, seg.endTime, seg.confidence, seg.audioSizeBytes, seg.batteryLevel, uploaded = false)
                 }
-                binFile.delete()
+                // Keep binFile so retry can re-attempt the upload later.
             }
         } catch (e: Exception) {
             Log.e(TAG, "Session upload failed$label", e)
-            binFile.delete()
+            // Keep binFile so retry can re-attempt the upload later.
             for (seg in sorted) {
                 saveRecord(seg.segmentId, syncId, "[Upload error: ${e.message}]",
                     seg.startTime, seg.endTime, seg.confidence, seg.audioSizeBytes, seg.batteryLevel, uploaded = false)
