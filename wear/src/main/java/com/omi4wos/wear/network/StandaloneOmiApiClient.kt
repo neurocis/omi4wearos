@@ -83,7 +83,7 @@ class StandaloneOmiApiClient(private val context: Context) {
         val body = MultipartBody.Builder()
             .setType(MultipartBody.FORM)
             .addFormDataPart(
-                "audio_file",
+                "files",
                 fileName,
                 audioBytes.toRequestBody("application/octet-stream".toMediaType())
             )
